@@ -1,0 +1,11 @@
+participant_code,session,device_class,attempt_type,decision,reason_code,notes
+P001,1,mobile_android,genuine,,,"reference capture — leave decision blank"
+P001,2,mobile_android,genuine,,,"good light, no glasses"
+P001,2,mobile_android,genuine,,,"low light"
+P001,2,mobile_ios,genuine,,,"with glasses"
+P001,3,mobile_android,impostor,,,"vs non-self template"
+P001,3,mobile_android,print_attack,,,"printed photo"
+P001,3,mobile_android,screen_photo,,,"phone-screen still"
+P001,3,mobile_android,screen_video,,,"phone-screen video"
+P001,3,mobile_android,synthetic_video,,,"only where safe/legal"
+P002,1,mobile_ios,genuine,,,"reference capture"

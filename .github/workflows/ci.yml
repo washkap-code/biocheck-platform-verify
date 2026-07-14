@@ -1,0 +1,79 @@
+# BioCheck CI — every gate blocks the merge. Release artifacts are built only
+# when all gates pass. Critical security findings block by design.
+name: ci
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  platform:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: platform } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: platform/package-lock.json }
+      - run: npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+      - name: Type check
+        run: npm run typecheck
+      - name: Unit / integration / e2e-flow tests (includes tenant-isolation and policy gates)
+        run: npm test
+      - name: Migration check — full chain applies cleanly to an empty database
+        run: npx tsx -e "const{createPgliteDb}=await import('./src/server/db/client.ts');const{migrate}=await import('./src/server/db/migrate.ts');const db=await createPgliteDb();const ran=await migrate(db);console.log('applied:',ran);if(ran.length===0)throw new Error('no migrations found');await db.close();"
+      - name: Build (production bundle)
+        run: npm run build
+
+  engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install cryptography numpy pydantic
+      - name: biocheck_engine unit tests
+        env: { BIOCHECK_MASTER_KEY_B64: "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=" }
+        run: python -m unittest discover -s tests -v
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks (blocks on any finding)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: platform } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - name: npm audit — CRITICAL findings block the release
+        run: npm audit --omit=dev --audit-level=critical
+      - name: OSV scan (full tree, informational + critical gate)
+        uses: google/osv-scanner-action/osv-scanner-action@v1
+        with: { scan-args: "--lockfile=platform/package-lock.json" }
+        continue-on-error: false
+
+  release-artifact:
+    needs: [platform, engine, secret-scan, dependency-scan]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build platform container image
+        run: docker build -t biocheck-platform:${{ github.sha }} --target production platform/
+      - name: Record image digest for the release checklist
+        run: docker image inspect biocheck-platform:${{ github.sha }} --format '{{ .Id }}' | tee image-digest.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: image-digest, path: image-digest.txt }
+      # Deployment is NOT automated: docs/PRODUCTION_RELEASE_CHECKLIST.md
+      # requires named human approvals before any production rollout.

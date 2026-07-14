@@ -1,0 +1,11 @@
+From: BioCheck Build Engineering
+Subject: [PATCH] TenniS: include cstdlib for GCC 13 compatibility
+
+The upstream source uses std::malloc and std::free but does not include the
+header that declares them. Modern GCC correctly rejects this.
+
+--- a/src/memory/orz/pot.cpp
++++ b/src/memory/orz/pot.cpp
+@@
+ #include "pot.h"
++#include <cstdlib>

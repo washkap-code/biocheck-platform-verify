@@ -1,0 +1,41 @@
+{
+  "name": "@biocheck/platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BioCheck Identity Cloud \u2014 enterprise platform (tenancy, identity, permissions, audit)",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "migrate": "tsx src/server/db/migrate.ts",
+    "seed": "tsx src/server/db/seed.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.0",
+    "@noble/hashes": "^1.4.0",
+    "drizzle-orm": "^0.36.0",
+    "next": "^15.0.0",
+    "pg": "^8.12.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "zod": "^3.23.0",
+    "lucide-react": "^0.417.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "tailwindcss": "^3.4.7",
+    "postcss": "^8.4.40",
+    "autoprefixer": "^10.4.19"
+  }
+}

@@ -1,0 +1,90 @@
+# BioCheck local development stack. Secrets come from .env (never committed).
+# The inference sidecar here is the CONTRACT-TEST FAKE — it refuses to run in
+# production and processes no biometrics. The real SeetaFace6 sidecar is built
+# on the isolated Linux builder (docs/SEETAFACE6_BUILD_STATUS.md) and is never
+# part of this compose file.
+name: biocheck-dev
+
+services:
+  app:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      target: dev
+    ports: ["3000:3000"]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgres://biocheck:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/biocheck
+      DB_DRIVER: postgres
+      REDIS_URL: redis://redis:6379
+      IP_HASH_SALT: ${IP_HASH_SALT:?set in .env}
+      VERIFY_CORE_URL: http://fake-sidecar:8090
+      VERIFY_CORE_API_KEY: ${VERIFY_CORE_API_KEY:-dev-only-contract-key}
+      BIOCHECK_MASTER_KEY_B64: ${BIOCHECK_MASTER_KEY_B64:?set in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      fake-sidecar: { condition: service_started }
+    volumes:
+      - ./platform:/app
+      - /app/node_modules
+
+  worker:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      target: dev
+    command: ["npx", "tsx", "src/server/jobs/worker.ts"]
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgres://biocheck:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/biocheck
+      DB_DRIVER: postgres
+      REDIS_URL: redis://redis:6379
+      IP_HASH_SALT: ${IP_HASH_SALT:?set in .env}
+      BIOCHECK_MASTER_KEY_B64: ${BIOCHECK_MASTER_KEY_B64:?set in .env}
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: biocheck
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: biocheck
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biocheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+
+  # Deterministic contract-test inference sidecar (fixtures only, no biometrics).
+  fake-sidecar:
+    build:
+      context: ./platform
+      dockerfile: Dockerfile
+      target: dev
+    command: ["npx", "tsx", "src/server/verification/fakeSidecarServer.ts"]
+    environment:
+      PORT: "8090"
+    expose: ["8090"]
+
+  # Optional S3-compatible evidence store: docker compose --profile storage up
+  minio:
+    image: minio/minio:latest
+    profiles: ["storage"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-biocheck-dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env when using storage profile}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+
+volumes:
+  pgdata:
+  miniodata:

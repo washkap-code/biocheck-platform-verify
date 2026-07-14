@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Builds
+platform/.next/
+platform/out/
+dist/
+*.tsbuildinfo
+
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+!.env.example
+platform/.env
+platform/.env.*
+!platform/.env.example
+testing/pilot.env
+testing/results.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Model weights must never be committed
+*.onnx
+*.pt
+*.pth
+*.csta
+
+# Reference dump (recovered scratch copy, not source of truth)
+platform/_site_reference/
+platform/_site_reference_dump.txt
+
+# Packaged engine archives / vendored native builds
+_packages/
+BioCheck_Verify_Engine_v*.zip
+vendor/
+tools/
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
+coverage/
