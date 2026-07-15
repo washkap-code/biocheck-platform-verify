@@ -81,6 +81,12 @@ Attempted in this workspace: background processes are terminated between tool ca
 - Approved Concept 1 logo SVGs copied into `platform/public/brand/` (handover item #4 cleared).
 - **Verification: engine 47/47 (24 new) · platform 133/133 vitest (19 new, incl. cross-modality isolation, PAD cap, revoked-matcher → REVIEW, 503 → REVIEW, ciphertext leakage scan) · tsc clean · 6/6 migrations apply.**
 
+### Phase 6 — Lead capture + Supabase schema sync (15 Jul 2026) ✅
+- Supabase project `biocheck-platform-verify` (correct org, reconnected connector): fingerprint schema applied as `0007_fingerprint` (with RLS), lead capture as `0008_demo_requests`; app-level `_migrations` bookkeeping created for 0001–0007 so the platform's migrate runner is consistent with the live database.
+- Repo migration `0007_demo_requests.sql`: minimal-PII `demo_requests` table (explicit consent mandatory, IP only as salted hash, status workflow).
+- `src/server/leads/service.ts` (validation, consent gate, control-char stripping, listing without ip_hash) + public rate-limited honeypot-protected `/api/demo-requests` route + real form on `/request-demo` (replaces the mailto interim, D-009). Success state uses cyan — green stays reserved for successful verification.
+- **Verification: leads 6/6 vitest, tsc clean, 7/7 migrations apply under PGlite; Supabase schema checks pass.**
+
 ## Status: all 8 prompts complete
 The build is in controlled-pilot posture. Production remains manually gated behind PRODUCTION_RELEASE_CHECKLIST.md.
 

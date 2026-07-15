@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { ButtonLink } from "@/components/ui/Button";
+import { DemoRequestForm } from "@/components/marketing/DemoRequestForm";
 
 export const metadata: Metadata = {
   title: "Request a Demo",
@@ -10,8 +10,8 @@ export const metadata: Metadata = {
 export default function RequestDemoPage() {
   return (
     <section className="section-dark">
-      <div className="container-edge grid min-h-[80vh] items-center py-28">
-        <div className="max-w-2xl">
+      <div className="container-edge grid gap-14 py-28 lg:grid-cols-[1fr_1.1fr] lg:gap-20">
+        <div>
           <p className="eyebrow">Request a demo</p>
           <h1 className="mt-4 font-display text-4xl font-extrabold leading-tight text-cloud sm:text-5xl">
             See BioVerify in action.
@@ -21,18 +21,17 @@ export default function RequestDemoPage() {
             protect. Our team will arrange a tailored demonstration of BioCheck
             identity verification.
           </p>
-          <p className="mt-4 text-sm text-cloud/50">
-            The full qualified-demo request form is being built (Phase 6). In the
-            meantime, reach us directly and we&rsquo;ll respond.
+          <p className="mt-4 text-sm leading-relaxed text-cloud/50">
+            Demonstrations use simulated data — no biometric data is captured
+            or stored during a demo. Prefer email? Reach us at{" "}
+            <a href="mailto:hello@biochecktech.com" className="text-cyan hover:underline">
+              hello@biochecktech.com
+            </a>
+            .
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <ButtonLink href="mailto:hello@biochecktech.com" variant="primary" size="lg">
-              Contact the team
-            </ButtonLink>
-            <ButtonLink href="/" variant="secondary" size="lg">
-              Back to home
-            </ButtonLink>
-          </div>
+        </div>
+        <div className="rounded-2xl border border-cloud/10 bg-cloud/[0.03] p-8 sm:p-10">
+          <DemoRequestForm />
         </div>
       </div>
     </section>
