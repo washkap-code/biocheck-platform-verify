@@ -23,6 +23,11 @@ from ..types import CaptureQuality, FaceSample, LivenessResult
 class SeetaFaceAnalysis:
     face: FaceSample
     liveness: LivenessResult
+    # Carried through separately from `liveness` because LivenessResult has no
+    # model-identity fields; callers (e.g. the verify-core HTTP facade) need
+    # the PAD model's own id/hash to report it, distinct from the face model.
+    pad_model_id: str
+    pad_model_sha256: str
 
 
 class SeetaFaceSidecar:
@@ -80,4 +85,4 @@ class SeetaFaceSidecar:
             bool(quality["face_detected"]), float(quality["score"]), float(quality["pose_degrees"]),
             float(quality["occlusion_score"])), data["model_id"], data["model_sha256"])
         liveness = LivenessResult(bool(pad["is_live"]), float(pad["score"]), pad.get("attack_type"))
-        return SeetaFaceAnalysis(face, liveness)
+        return SeetaFaceAnalysis(face, liveness, str(pad["model_id"]), str(pad["model_sha256"]))

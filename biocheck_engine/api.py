@@ -1,0 +1,254 @@
+"""verify-core HTTP facade.
+
+Wraps biocheck_engine (policy, model registry, crypto, audit) behind the exact
+three-endpoint contract platform/src/server/verification/providers.ts already
+speaks to: POST /v1/analyse, /v1/templates, /v1/compare. This process is the
+provider boundary referred to throughout the codebase — the platform's Next.js
+app never receives a raw embedding, only opaque capture_ref / template_ciphertext
+strings and derived metadata (scores, model ids).
+
+Fail-closed, matching the rest of the codebase:
+- No face-analysis adapter configured -> refuses to start (never a silent
+  fallback to a fake provider).
+- Unknown/unapproved model hash -> HTTP 409, never a silent pass.
+- capture_ref is single-use and short-lived; expired/reused/unknown -> 409.
+- Nothing here ever logs raw image bytes, embeddings or bearer tokens.
+"""
+from __future__ import annotations
+
+import base64
+import json
+import os
+import time
+import uuid
+from dataclasses import dataclass
+from typing import Optional
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from .crypto import EncryptedBlob, decrypt_json, encrypt_json
+from .model_registry import ModelCard, ModelRegistry
+from .providers.seetaface import SeetaFaceAnalysis, SeetaFaceSidecar
+from .service import cosine_similarity
+
+# A fixed context string, not a real tenant id: this facade has no tenant
+# concept (the wire contract it implements does not pass one — multi-tenant
+# isolation is enforced by the platform's own database columns, not by this
+# ciphertext). It only binds the ciphertext's AAD to "this facade", so a blob
+# can't be silently reinterpreted by a different encryption context.
+_TEMPLATE_CRYPTO_CONTEXT = "verify-core-template-v1"
+
+CAPTURE_TTL_SECONDS = 120
+
+
+@dataclass
+class _CaptureRecord:
+    embedding: object  # np.ndarray, kept in-process only, never serialised out
+    model_id: str
+    model_sha256: str
+    expires_at: float
+    consumed: bool = False
+
+
+class _CaptureStore:
+    """In-memory, single-process, single-use, short-lived. Fine for one
+    verify-core instance; a multi-instance deployment needs a shared store
+    (e.g. Redis) instead — flagged in docs/PUSH_AND_DEPLOY.md, not implemented
+    here since this facade is meant to be self-contained for now."""
+
+    def __init__(self) -> None:
+        self._records: dict[str, _CaptureRecord] = {}
+
+    def put(self, record: _CaptureRecord) -> str:
+        self._gc()
+        ref = f"vc_{uuid.uuid4().hex}"
+        self._records[ref] = record
+        return ref
+
+    def consume(self, ref: str) -> _CaptureRecord:
+        self._gc()
+        record = self._records.get(ref)
+        if record is None or record.consumed or record.expires_at < time.time():
+            self._records.pop(ref, None)
+            raise KeyError("capture_ref is invalid, expired or already used")
+        record.consumed = True
+        return record
+
+    def _gc(self) -> None:
+        now = time.time()
+        for ref, record in list(self._records.items()):
+            if record.consumed or record.expires_at < now:
+                self._records.pop(ref, None)
+
+
+class AnalyseRequest(BaseModel):
+    image_b64: str
+    challenge_id: str
+    retain_image: bool = False
+
+
+class TemplateRequest(BaseModel):
+    capture_ref: str
+
+
+class CompareRequest(BaseModel):
+    template_ciphertext: str
+    capture_ref: str
+
+
+def _load_model_registry() -> ModelRegistry:
+    registry = ModelRegistry()
+    raw = os.environ.get("VERIFY_CORE_APPROVED_MODELS_JSON")
+    if raw:
+        for entry in json.loads(raw):
+            registry.approve(ModelCard(**entry))
+    if os.environ.get("VERIFY_CORE_DEV_FIXTURES", "").lower() == "true":
+        if os.environ.get("APP_ENV", "").lower() == "production":
+            raise RuntimeError("VERIFY_CORE_DEV_FIXTURES must never be enabled when APP_ENV=production.")
+        from .dev_fixture_adapter import (
+            DEV_FACE_MODEL_ID, DEV_FACE_MODEL_SHA256, DEV_PAD_MODEL_ID, DEV_PAD_MODEL_SHA256,
+        )
+        registry.approve(ModelCard(DEV_FACE_MODEL_ID, DEV_FACE_MODEL_SHA256, "face_embedding",
+                                    True, "DEV-FIXTURE-NOT-A-REAL-EVAL", "dev-fixtures", "2099-01-01"))
+        registry.approve(ModelCard(DEV_PAD_MODEL_ID, DEV_PAD_MODEL_SHA256, "passive_pad",
+                                    True, "DEV-FIXTURE-NOT-A-REAL-EVAL", "dev-fixtures", "2099-01-01"))
+    return registry
+
+
+def _load_adapter(registry: ModelRegistry):
+    """Explicit config only, never a silent fallback — mirrors
+    platform/src/server/api/http.ts's getProvider()."""
+    sidecar_url = os.environ.get("VERIFY_CORE_SIDECAR_URL")
+    if sidecar_url:
+        api_key = os.environ.get("VERIFY_CORE_SIDECAR_API_KEY")
+        if not api_key:
+            raise RuntimeError("VERIFY_CORE_SIDECAR_API_KEY is required when VERIFY_CORE_SIDECAR_URL is set.")
+        return SeetaFaceSidecar(sidecar_url, api_key, registry)
+    if os.environ.get("VERIFY_CORE_DEV_FIXTURES", "").lower() == "true":
+        from .dev_fixture_adapter import DevFixtureAdapter
+        return DevFixtureAdapter()
+    raise RuntimeError(
+        "No face-analysis adapter configured. Set VERIFY_CORE_SIDECAR_URL (+ "
+        "VERIFY_CORE_SIDECAR_API_KEY) for the real SeetaFace6 sidecar, or "
+        "VERIFY_CORE_DEV_FIXTURES=true for local development only."
+    )
+
+
+def create_app() -> FastAPI:
+    registry = _load_model_registry()
+    adapter = _load_adapter(registry)
+    captures = _CaptureStore()
+    expected_key = os.environ.get("VERIFY_CORE_API_KEY")
+    if not expected_key and os.environ.get("APP_ENV", "").lower() == "production":
+        raise RuntimeError("VERIFY_CORE_API_KEY must be set when APP_ENV=production.")
+
+    app = FastAPI(title="BioCheck verify-core", docs_url=None, redoc_url=None)
+
+    def require_auth(authorization: Optional[str] = Header(None)) -> None:
+        if not expected_key:
+            return  # local dev with no key configured
+        presented = (authorization or "").removeprefix("Bearer ").strip()
+        if not presented or presented != expected_key:
+            raise HTTPException(status_code=401, detail="Invalid or missing bearer token.")
+
+    @app.exception_handler(Exception)
+    async def _no_leak_handler(_: Request, exc: Exception) -> JSONResponse:
+        # Never echo internals, and never let a stray str(exc) carry request
+        # content — every raise site below only ever includes safe, static text.
+        if isinstance(exc, HTTPException):
+            return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+        return JSONResponse({"error": "internal_error"}, status_code=500)
+
+    @app.get("/health")
+    async def health() -> dict:
+        return {"status": "ok", "adapter": adapter.__class__.__name__}
+
+    @app.post("/v1/analyse", dependencies=[Depends(require_auth)])
+    async def analyse(body: AnalyseRequest) -> dict:
+        try:
+            image_bytes = base64.b64decode(body.image_b64, validate=True)
+        except Exception:
+            raise HTTPException(400, "image_b64 is not valid base64.")
+        if not image_bytes or len(image_bytes) > 8 * 1024 * 1024:
+            raise HTTPException(400, "Capture must be non-empty and below 8 MiB.")
+        try:
+            result: SeetaFaceAnalysis = adapter.analyse(image_bytes, body.challenge_id)
+        except PermissionError:
+            raise HTTPException(409, "Model is not in the approved registry.")
+        except (ValueError, KeyError):
+            raise HTTPException(422, "Capture could not be analysed.")
+        except RuntimeError:
+            raise HTTPException(503, "Face-analysis service unavailable; verification must fail closed.")
+
+        ref = captures.put(_CaptureRecord(
+            embedding=result.face.embedding,
+            model_id=result.face.model_id,
+            model_sha256=result.face.model_sha256,
+            expires_at=time.time() + CAPTURE_TTL_SECONDS,
+        ))
+        q = result.face.quality
+        return {
+            "capture_ref": ref,
+            "quality": {
+                "face_detected": q.face_detected,
+                "score": q.quality_score,
+                "pose_degrees": q.pose_degrees,
+                "occlusion_score": q.occlusion_score,
+            },
+            "passive_pad": {
+                "is_live": result.liveness.is_live,
+                "score": result.liveness.score,
+                "attack_type": result.liveness.attack_type,
+                "model_id": result.pad_model_id,
+                "model_sha256": result.pad_model_sha256,
+            },
+            "model_id": result.face.model_id,
+            "model_sha256": result.face.model_sha256,
+        }
+
+    @app.post("/v1/templates", dependencies=[Depends(require_auth)])
+    async def templates(body: TemplateRequest) -> dict:
+        try:
+            record = captures.consume(body.capture_ref)
+        except KeyError:
+            raise HTTPException(409, "capture_ref is invalid, expired or already used.")
+        blob = encrypt_json(_TEMPLATE_CRYPTO_CONTEXT, {
+            "embedding": record.embedding.tolist(),
+            "model_id": record.model_id,
+            "model_sha256": record.model_sha256,
+        })
+        ciphertext = f"v1:{blob.nonce_b64}:{blob.ciphertext_b64}"
+        return {"template_ciphertext": ciphertext, "model_id": record.model_id, "model_sha256": record.model_sha256}
+
+    @app.post("/v1/compare", dependencies=[Depends(require_auth)])
+    async def compare(body: CompareRequest) -> dict:
+        try:
+            record = captures.consume(body.capture_ref)
+        except KeyError:
+            raise HTTPException(409, "capture_ref is invalid, expired or already used.")
+        try:
+            prefix, nonce_b64, ciphertext_b64 = body.template_ciphertext.split(":", 2)
+            if prefix != "v1":
+                raise ValueError("unsupported template version")
+            payload = decrypt_json(_TEMPLATE_CRYPTO_CONTEXT, EncryptedBlob(nonce_b64, ciphertext_b64))
+        except Exception:
+            raise HTTPException(422, "template_ciphertext is malformed or could not be decrypted.")
+
+        import numpy as np
+        reference = np.asarray(payload["embedding"], dtype=np.float32)
+        selfie = np.asarray(record.embedding, dtype=np.float32)
+        try:
+            similarity = cosine_similarity(reference, selfie)
+        except ValueError:
+            raise HTTPException(422, "Reference and capture embeddings are not comparable.")
+        return {"similarity": similarity}
+
+    return app
+
+
+# `uvicorn biocheck_engine.api:app` entry point. Deliberately unconditional:
+# if no adapter is configured this raises immediately at import/startup time
+# (fail closed) instead of booting into a broken or silently-fallback state.
+app = create_app()
