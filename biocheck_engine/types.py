@@ -37,6 +37,32 @@ class FaceSample:
 
 
 @dataclass(frozen=True)
+class FingerprintQuality:
+    finger_detected: bool
+    quality_score: float  # normalised 0..1 (real sidecar derives this from NFIQ2)
+    minutiae_count: int
+
+
+@dataclass(frozen=True)
+class FingerprintPad:
+    """Presentation-attack detection for fingerprint. Only available when the
+    capture device/sidecar actually performs it — never synthesised."""
+    is_live: bool
+    score: float
+    attack_type: str | None
+    model_id: str
+    model_sha256: str
+
+
+@dataclass(frozen=True)
+class FingerprintSample:
+    template: bytes  # opaque minutiae template (ISO/IEC 19794-2 in the real sidecar)
+    quality: FingerprintQuality
+    model_id: str
+    model_sha256: str
+
+
+@dataclass(frozen=True)
 class VerificationResult:
     decision: Decision
     reason_code: str

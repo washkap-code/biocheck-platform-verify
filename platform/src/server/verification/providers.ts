@@ -48,6 +48,50 @@ export interface BiometricProvider {
   compareTemplates(templateCiphertext: string, captureRef: string): Promise<{ similarity: number }>;
 }
 
+/* ----------------------------- fingerprint modality ----------------------------- */
+
+export interface FingerprintQuality {
+  fingerDetected: boolean;
+  qualityScore: number;   // normalised 0..1 (real sidecar derives from NFIQ2)
+  minutiaeCount: number;
+}
+
+/** PAD (fake-finger detection) is hardware-dependent and therefore OPTIONAL
+ *  in the capture contract — but the decision policy caps approvals at human
+ *  review whenever it is absent. It is never synthesised. */
+export interface FingerprintPadSignal {
+  isLive: boolean;
+  score: number;
+  attackType: string | null;
+  modelId: string;
+  modelSha256: string;
+}
+
+export interface FingerprintCaptureAnalysis {
+  captureRef: string;     // opaque, single verification only
+  quality: FingerprintQuality;
+  pad: FingerprintPadSignal | null;
+  modelId: string;        // extractor model
+  modelSha256: string;
+}
+
+export interface FingerprintCompareResult {
+  score: number;          // normalised 0..1, calibrated inside the sidecar
+  matcherModelId: string;
+  matcherModelSha256: string;
+  padPresent: boolean;
+  padIsLive: boolean;
+}
+
+/** Fingerprint provider contract. Comparison happens inside the provider
+ *  boundary (minutiae matching is not a local vector operation). */
+export interface FingerprintProvider {
+  readonly providerId: string;
+  analyseFingerprint(imageBytes: Uint8Array, challengeNonce: string): Promise<FingerprintCaptureAnalysis>;
+  createFingerprintTemplate(captureRef: string): Promise<TemplateResult>;
+  compareFingerprintTemplates(templateCiphertext: string, captureRef: string): Promise<FingerprintCompareResult>;
+}
+
 export class ProviderUnavailableError extends Error {
   readonly code = "SERVICE_UNAVAILABLE";
 }
@@ -75,6 +119,9 @@ export async function assertModelApproved(db: Db, modelId: string, sha256: strin
 
 export const FAKE_MODEL = { id: "fake-embedding-v1", sha256: "f".repeat(64) };
 export const FAKE_PAD_MODEL = { id: "fake-pad-v1", sha256: "e".repeat(64) };
+export const FAKE_FP_MODEL = { id: "fake-fp-extractor-v1", sha256: "b".repeat(64) };
+export const FAKE_FP_PAD_MODEL = { id: "fake-fp-pad-v1", sha256: "a".repeat(64) };
+export const FAKE_FP_MATCHER_MODEL = { id: "fake-fp-matcher-v1", sha256: "9".repeat(64) };
 
 interface FakeFixture {
   person: string;
@@ -84,6 +131,17 @@ interface FakeFixture {
   faceDetected?: boolean;
   live?: boolean;
   livenessScore?: number;
+  attackType?: string | null;
+}
+
+interface FakeFpFixture {
+  finger: string;
+  quality?: number;
+  minutiae?: number;
+  fingerDetected?: boolean;
+  pad?: boolean;          // whether the (fake) capture path performed PAD
+  padLive?: boolean;
+  padScore?: number;
   attackType?: string | null;
 }
 
@@ -108,9 +166,10 @@ function decryptOpaque(blob: string): { person: string } {
  * {"person":"alice","quality":0.98,"live":true}. Same person ⇒ similarity 0.99;
  * different people ⇒ 0.12. Deterministic and biometric-free.
  */
-export class FakeProvider implements BiometricProvider {
+export class FakeProvider implements BiometricProvider, FingerprintProvider {
   readonly providerId = "fake-deterministic";
   private captures = new Map<string, FakeFixture>();
+  private fpCaptures = new Map<string, FakeFpFixture>();
 
   constructor() {
     if (process.env.NODE_ENV === "production") {
@@ -164,6 +223,65 @@ export class FakeProvider implements BiometricProvider {
     const reference = decryptOpaque(templateCiphertext);
     return { similarity: reference.person === fixture.person ? 0.99 : 0.12 };
   }
+
+  /* ------------------------- fingerprint (fake) ------------------------- */
+
+  async analyseFingerprint(imageBytes: Uint8Array, challengeNonce: string): Promise<FingerprintCaptureAnalysis> {
+    if (!challengeNonce) throw new Error("challengeNonce is required");
+    let fixture: FakeFpFixture;
+    try {
+      fixture = JSON.parse(Buffer.from(imageBytes).toString("utf8"));
+      if (typeof fixture.finger !== "string") throw new Error("not an fp fixture");
+    } catch {
+      fixture = { finger: sha256Hex(imageBytes).slice(0, 12) };
+    }
+    const captureRef = `fakefp_${randomUUID()}`;
+    this.fpCaptures.set(captureRef, fixture);
+    const padPerformed = fixture.pad !== false; // fake path performs PAD unless told not to
+    return {
+      captureRef,
+      quality: {
+        fingerDetected: fixture.fingerDetected ?? true,
+        qualityScore: fixture.quality ?? 0.88,
+        minutiaeCount: fixture.minutiae ?? 34,
+      },
+      pad: padPerformed
+        ? {
+            isLive: fixture.padLive ?? true,
+            score: fixture.padScore ?? (fixture.padLive === false ? 0.05 : 0.98),
+            attackType: fixture.attackType ?? null,
+            modelId: FAKE_FP_PAD_MODEL.id,
+            modelSha256: FAKE_FP_PAD_MODEL.sha256,
+          }
+        : null,
+      modelId: FAKE_FP_MODEL.id,
+      modelSha256: FAKE_FP_MODEL.sha256,
+    };
+  }
+
+  async createFingerprintTemplate(captureRef: string): Promise<TemplateResult> {
+    const fixture = this.fpCaptures.get(captureRef);
+    if (!fixture) throw new Error("Unknown or expired captureRef");
+    return {
+      templateCiphertext: encryptOpaque({ person: `fp:${fixture.finger}` }),
+      modelId: FAKE_FP_MODEL.id,
+      modelSha256: FAKE_FP_MODEL.sha256,
+    };
+  }
+
+  async compareFingerprintTemplates(templateCiphertext: string, captureRef: string): Promise<FingerprintCompareResult> {
+    const fixture = this.fpCaptures.get(captureRef);
+    if (!fixture) throw new Error("Unknown or expired captureRef");
+    const reference = decryptOpaque(templateCiphertext);
+    const padPerformed = fixture.pad !== false;
+    return {
+      score: reference.person === `fp:${fixture.finger}` ? 0.97 : 0.06,
+      matcherModelId: FAKE_FP_MATCHER_MODEL.id,
+      matcherModelSha256: FAKE_FP_MATCHER_MODEL.sha256,
+      padPresent: padPerformed,
+      padIsLive: padPerformed ? (fixture.padLive ?? true) : false,
+    };
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -185,7 +303,7 @@ export interface VerifyCoreConfig {
  * approve. Request bodies are never logged. Production refuses non-HTTPS
  * endpoints (mTLS terminates at the private gateway).
  */
-export class VerifyCoreProvider implements BiometricProvider {
+export class VerifyCoreProvider implements BiometricProvider, FingerprintProvider {
   readonly providerId = "verify-core";
   private readonly timeoutMs: number;
   private readonly transport: (url: string, init: RequestInit) => Promise<Response>;
@@ -275,5 +393,74 @@ export class VerifyCoreProvider implements BiometricProvider {
     const similarity = Number(data.similarity);
     if (!Number.isFinite(similarity)) throw new ProviderUnavailableError("verify-core similarity malformed.");
     return { similarity };
+  }
+
+  /* --------------------- fingerprint (verify-core) --------------------- */
+  // verify-core returns 503 on these routes until a real fingerprint sidecar
+  // is configured — which surfaces here as ProviderUnavailableError and
+  // routes the attempt to human review. Fail closed by construction.
+
+  async analyseFingerprint(imageBytes: Uint8Array, challengeNonce: string): Promise<FingerprintCaptureAnalysis> {
+    if (imageBytes.byteLength === 0 || imageBytes.byteLength > 4 * 1024 * 1024) {
+      throw new Error("Capture must be non-empty and below 4 MiB.");
+    }
+    const data = await this.post<Record<string, unknown>>("/v1/fingerprint/analyse", {
+      image_b64: Buffer.from(imageBytes).toString("base64"),
+      challenge_id: challengeNonce,
+      retain_image: false,
+    });
+    const q = data.quality as Record<string, unknown> | undefined;
+    if (!data.capture_ref || !q || !data.model_id || !data.model_sha256) {
+      throw new ProviderUnavailableError("verify-core fingerprint response missing required fields.");
+    }
+    const pad = (data.pad ?? null) as Record<string, unknown> | null;
+    return {
+      captureRef: String(data.capture_ref),
+      quality: {
+        fingerDetected: Boolean(q.finger_detected),
+        qualityScore: Number(q.score),
+        minutiaeCount: Number(q.minutiae_count),
+      },
+      pad: pad === null ? null : {
+        isLive: Boolean(pad.is_live),
+        score: Number(pad.score),
+        attackType: (pad.attack_type as string) ?? null,
+        modelId: String(pad.model_id),
+        modelSha256: String(pad.model_sha256),
+      },
+      modelId: String(data.model_id),
+      modelSha256: String(data.model_sha256),
+    };
+  }
+
+  async createFingerprintTemplate(captureRef: string): Promise<TemplateResult> {
+    const data = await this.post<Record<string, unknown>>("/v1/fingerprint/templates", { capture_ref: captureRef });
+    if (!data.template_ciphertext || !data.model_id || !data.model_sha256) {
+      throw new ProviderUnavailableError("verify-core fingerprint template response malformed.");
+    }
+    return {
+      templateCiphertext: String(data.template_ciphertext),
+      modelId: String(data.model_id),
+      modelSha256: String(data.model_sha256),
+    };
+  }
+
+  async compareFingerprintTemplates(templateCiphertext: string, captureRef: string): Promise<FingerprintCompareResult> {
+    const data = await this.post<Record<string, unknown>>("/v1/fingerprint/compare", {
+      template_ciphertext: templateCiphertext,
+      capture_ref: captureRef,
+    });
+    const score = Number(data.score);
+    const pad = data.pad as Record<string, unknown> | undefined;
+    if (!Number.isFinite(score) || score < 0 || score > 1 || !data.matcher_model_id || !data.matcher_model_sha256 || !pad) {
+      throw new ProviderUnavailableError("verify-core fingerprint compare response malformed.");
+    }
+    return {
+      score,
+      matcherModelId: String(data.matcher_model_id),
+      matcherModelSha256: String(data.matcher_model_sha256),
+      padPresent: Boolean(pad.present),
+      padIsLive: Boolean(pad.is_live),
+    };
   }
 }

@@ -8,7 +8,9 @@ import { authenticateApiKey, type ApiKeyPrincipal, type ApiScope } from "../apik
 import { AuthorizationError } from "../authz/policy";
 import { VerificationError } from "../verification/service";
 import { IdempotencyConflictError, withIdempotency } from "../idempotency";
-import { FakeProvider, VerifyCoreProvider, type BiometricProvider } from "../verification/providers";
+import {
+  FakeProvider, VerifyCoreProvider, type BiometricProvider, type FingerprintProvider,
+} from "../verification/providers";
 
 let provider: BiometricProvider | null = null;
 
@@ -23,6 +25,13 @@ export function getProvider(): BiometricProvider {
     throw new Error("Configure VERIFY_CORE_URL and VERIFY_CORE_API_KEY (see .env.example).");
   }
   return provider;
+}
+
+/** Both concrete providers implement the fingerprint contract on the same
+ *  instance. With VerifyCoreProvider the fingerprint routes fail closed
+ *  (503 → REVIEW) until a real fingerprint sidecar is configured. */
+export function getFingerprintProvider(): FingerprintProvider {
+  return getProvider() as unknown as FingerprintProvider;
 }
 
 export function errorResponse(err: unknown): NextResponse {

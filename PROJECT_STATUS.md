@@ -74,6 +74,13 @@ Attempted in this workspace: background processes are terminated between tool ca
 - Docs: PILOT_READINESS_REPORT.md (evidence table per scenario, acceptance-criteria status, residual risks, go/no-go), KNOWN_LIMITATIONS.md (not certified; accuracy/PAD unmeasured; scope boundaries; deployment gaps), BUILD_HANDOVER.md (architecture, endpoints, 5 migrations, roles, env vars, setup, results, the 8 outstanding human approvals). Pilot-only config `testing/pilot.env.example` + pseudonymised import template `testing/results_template.csv` (validated against `summarise_pilot_results.py`).
 - **Final results: platform 114/114 vitest (7 suites) + engine 8/8 + tsc clean + next build passing + 5/5 migrations apply.**
 
+### Fingerprint contract layer (15 Jul 2026) ✅
+- Modality added end-to-end, mirroring the face architecture, fail-closed everywhere. **No real scanner, extractor or matcher exists** — see `docs/FINGERPRINT_BUILD_STATUS.md` for the honest status and the owner build list.
+- Engine: `FingerprintVerificationPolicy` (PAD-required approval cap — strong match without live PAD ⇒ REVIEW, failed PAD ⇒ REJECT), `providers/fingerprint.py` sidecar wire contract (registry gates for `fingerprint_extraction`/`fingerprint_pad`/`fingerprint_matching`; compare delegated to the sidecar), facade endpoints `/v1/fingerprint/{analyse,templates,compare}` with separate AAD crypto context (face↔fingerprint ciphertext cross-replay impossible) and 503 fail-closed when unconfigured; dev fixture adapter (refuses production).
+- Platform: migration `0006_fingerprint.sql` (modality columns + immutable `fingerprint_policies` + `active_fp_policy_id`/`fp_policy_id`), `FingerprintProvider` contract on both providers, `decideFingerprint` mirror, `enrolFingerprint`/`verifyFingerprint`, modality-bound capture sessions (mismatch ⇒ 409), `/v1` routes accept `modality`, OpenAPI updated.
+- Approved Concept 1 logo SVGs copied into `platform/public/brand/` (handover item #4 cleared).
+- **Verification: engine 47/47 (24 new) · platform 133/133 vitest (19 new, incl. cross-modality isolation, PAD cap, revoked-matcher → REVIEW, 503 → REVIEW, ciphertext leakage scan) · tsc clean · 6/6 migrations apply.**
+
 ## Status: all 8 prompts complete
 The build is in controlled-pilot posture. Production remains manually gated behind PRODUCTION_RELEASE_CHECKLIST.md.
 

@@ -59,7 +59,10 @@ export const openApiDocument = {
         description: "Short-lived, one-use, nonce-bound. Requires scope verification:create.",
         parameters: [{ name: "Idempotency-Key", in: "header", schema: { type: "string" } }],
         requestBody: {
-          content: { "application/json": { schema: { type: "object", required: ["purpose"], properties: { purpose: { type: "string", enum: ["enrolment", "verification"] } } } } },
+          content: { "application/json": { schema: { type: "object", required: ["purpose"], properties: {
+            purpose: { type: "string", enum: ["enrolment", "verification"] },
+            modality: { type: "string", enum: ["face", "fingerprint"], default: "face", description: "A session issued for one modality can never be spent on another. Fingerprint capture/matching is not production-ready; without a configured fingerprint sidecar those requests fail closed." },
+          } } } },
         },
         responses: {
           "201": { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/CaptureSession" } } } },
@@ -82,6 +85,7 @@ export const openApiDocument = {
               captureSessionToken: { type: "string" }, imageB64: { type: "string" },
               consent: { $ref: "#/components/schemas/Consent" },
               sourceType: { type: "string", enum: ["live_capture", "document_portrait"] },
+              modality: { type: "string", enum: ["face", "fingerprint"], default: "face" },
             },
           } } },
         },
@@ -100,7 +104,8 @@ export const openApiDocument = {
         requestBody: {
           content: { "application/json": { schema: {
             type: "object", required: ["subjectRef", "captureSessionToken", "imageB64"],
-            properties: { subjectRef: { type: "string" }, captureSessionToken: { type: "string" }, imageB64: { type: "string" } },
+            properties: { subjectRef: { type: "string" }, captureSessionToken: { type: "string" }, imageB64: { type: "string" },
+              modality: { type: "string", enum: ["face", "fingerprint"], default: "face", description: "Fingerprint approvals additionally require live PAD from the capture device; a strong match without PAD is capped at human review." } },
           } } },
         },
         responses: { "201": { description: "Outcome", content: { "application/json": { schema: { $ref: "#/components/schemas/VerificationOutcome" } } } } },

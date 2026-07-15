@@ -32,6 +32,9 @@ export const REASON_MESSAGES: Record<string, string> = {
   CONSENT_WITHDRAWN: "Consent for this profile has been withdrawn.",
   SERVICE_UNAVAILABLE: "The verification service is temporarily unavailable. Please try again shortly.",
   RISK_SIGNAL_REVIEW: "Your verification needs a quick manual review.",
+  FINGER_NOT_DETECTED: "We could not read a fingerprint. Please place your finger flat on the scanner and try again.",
+  PAD_FAILED: "We could not confirm the capture came from a live finger. Verification was not approved.",
+  PAD_UNAVAILABLE_REVIEW_REQUIRED: "Your verification needs a quick manual review.",
 };
 
 export interface DecisionInput {
@@ -65,4 +68,46 @@ export function decide(policy: PolicyRow, input: DecisionInput): { decision: Dec
 
 export function humanMessage(reasonCode: string): string {
   return REASON_MESSAGES[reasonCode] ?? "Your verification needs a quick manual review.";
+}
+
+/* ----------------------------- fingerprint ----------------------------- */
+
+/** Mirrors biocheck_engine/policy.py FingerprintVerificationPolicy exactly. */
+export interface FingerprintPolicyRow {
+  id: string;
+  version: number;
+  min_quality: number;
+  min_minutiae: number;
+  approve_score: number;
+  review_score: number;
+  require_pad_for_approval: boolean;
+}
+
+export interface FingerprintDecisionInput {
+  fingerDetected: boolean;
+  quality: number;
+  minutiaeCount: number;
+  padPresent: boolean;
+  padIsLive: boolean;
+  score: number;
+}
+
+export function decideFingerprint(
+  policy: FingerprintPolicyRow, input: FingerprintDecisionInput,
+): { decision: Decision; reasonCode: string } {
+  if (!input.fingerDetected) return { decision: "rejected", reasonCode: "FINGER_NOT_DETECTED" };
+  if (input.quality < policy.min_quality || input.minutiaeCount < policy.min_minutiae) {
+    return { decision: "review", reasonCode: "CAPTURE_QUALITY_INSUFFICIENT" };
+  }
+  if (input.padPresent && !input.padIsLive) return { decision: "rejected", reasonCode: "PAD_FAILED" };
+  if (input.score >= policy.approve_score) {
+    if (policy.require_pad_for_approval && !(input.padPresent && input.padIsLive)) {
+      return { decision: "review", reasonCode: "PAD_UNAVAILABLE_REVIEW_REQUIRED" };
+    }
+    return { decision: "approved", reasonCode: "MATCH_CONFIRMED" };
+  }
+  if (input.score >= policy.review_score) {
+    return { decision: "review", reasonCode: "MATCH_REQUIRES_HUMAN_REVIEW" };
+  }
+  return { decision: "rejected", reasonCode: "MATCH_NOT_CONFIRMED" };
 }
