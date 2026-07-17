@@ -49,7 +49,7 @@ Attempted in this workspace: background processes are terminated between tool ca
 - **Verification: 73/73 vitest (41 + 32 across four suites) + tsc clean; engine 8/8 unchanged.**
 
 ### Prompt 5 — Customer console, developer platform, marketing site (14 Jul 2026) ✅
-- **Marketing site restored from the approved reference** (recovered dump of the previous build): homepage, request-demo, Navbar/Footer/Logo components, navigation, Tailwind theme with the exact Concept 1 palette/typography — used verbatim, no redesign. Lives in the `(marketing)` route group; console/admin routes are deliberately outside it. ⚠️ The three approved logo SVGs must be copied from the brand kit into `platform/public/brand/` (README placed there; kit ZIP not attached this session — code references the correct filenames).
+- **Marketing site restored from the approved reference** (recovered dump of the previous build): homepage, request-demo, Navbar/Footer/Logo components, navigation, Tailwind theme with the exact Concept 1 palette/typography — used verbatim, no redesign. Lives in the `(marketing)` route group; console/admin routes are deliberately outside it. The approved Concept 1 SVGs are now present in `platform/public/brand/`.
 - Organisation dashboard `/console`: live aggregates (volumes, approval/review/reject rates, daily bars, capture-quality issues, webhook health, active policy + model versions, pending/overdue reviews). No static charts; empty/error states handled.
 - Project management `/console/projects`: sandbox/production separation, scoped API keys with one-time secret flash (tenant-scoped read-and-burn), webhook endpoint setup (secret shown once), per-environment policy activation (policies:approve), org settings (liveness exception + review SLA) — all via policy-layer-guarded server actions with audit events.
 - Developer portal `/developers`: rendered from the live OpenAPI document (single source of truth), TS + Python quick starts with redacted examples, webhook signature verification sample, idempotency guidance, sandbox test personas (simulation clearly labelled).
@@ -66,7 +66,7 @@ Attempted in this workspace: background processes are terminated between tool ca
 - CI (`.github/workflows/ci.yml`): typecheck, full platform test suite, empty-DB migration check, production build, Python engine tests, gitleaks secret scan, npm audit (critical blocks) + OSV scan — release artifact (image digest) built only when every gate passes; deployment stays manual.
 - Docs: OPERATIONS_RUNBOOK.md (backup/restore drill, **RPO ≤ 15 min / RTO ≤ 4 h**, migration strategy, job ops, common incidents), DEPLOYMENT.md, PRODUCTION_RELEASE_CHECKLIST.md (named human approvals incl. model-hash attestation, pilot report, pen test, DPIA).
 - **Exact results this phase: platform 94/94 vitest (20+21+17+15+9+12 across six suites), engine 8/8 unittest, tsc clean, next build passing.**
-- Remaining blockers (unchanged, external): SeetaFace6 sidecar native build on a real Linux machine; verify-core FastAPI facade (G1); approved logo SVGs into `public/brand/`; production KMS choice.
+- Remaining blockers (unchanged, external): SeetaFace6 sidecar native build on a real Linux machine; hosted verify-core deployment wired to that sidecar; production KMS choice.
 
 ### Prompt 7 — Final security verification & controlled-pilot readiness (14 Jul 2026) ✅
 - Adversarial suite (`adversarial.test.ts`, **20 scenarios, all contained**): cross-tenant access (verifications/sessions/audit/reviews/subject-ref collision), API-key scope escalation + tampered/truncated/revoked keys, capture-session replay + expiry reuse, webhook signature replay/stale/tamper/wrong-secret, model-hash + purpose swap + mid-flight revocation → REVIEW, liveness failure with matching face, exception-path abuse (disabled by default), missing/withdrawn consent, subject deletion + cross-tenant deletion, reviewer cross-org + privilege abuse, raw-biometric leakage across 12 tables + logs, audit-chain integrity, login brute-force lockout.
@@ -92,10 +92,9 @@ The build is in controlled-pilot posture. Production remains manually gated behi
 
 ## Outstanding human approvals / external actions (from BUILD_HANDOVER.md)
 1. Build SeetaFace6 sidecar on an isolated Linux builder; record hashes/compiler/OS digest.
-2. Implement verify-core FastAPI facade (platform client + contract done).
+2. Deploy the existing verify-core FastAPI facade behind HTTPS/mTLS and connect it to the sidecar.
 3. Configure production KMS/HSM; register model hashes in a test-only registry.
-4. Drop approved Concept 1 logo SVGs into `platform/public/brand/`.
-5. Independent penetration test (pre-production).
-6. Approved model cards (licence, independent 1:1 + PAD reports, demographics, calibration).
-7. Signed controlled-pilot report (`testing/PILOT_PROTOCOL.md`).
-8. Per-tenant DPIA; named release approver; marketing/claims check.
+4. Independent penetration test (pre-production).
+5. Approved model cards (licence, independent 1:1 + PAD reports, demographics, calibration).
+6. Signed controlled-pilot report (`testing/PILOT_PROTOCOL.md`).
+7. Per-tenant DPIA; named release approver; marketing/claims check.

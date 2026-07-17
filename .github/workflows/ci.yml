@@ -37,6 +37,13 @@ jobs:
       - name: biocheck_engine unit tests
         env: { BIOCHECK_MASTER_KEY_B64: "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=" }
         run: python -m unittest discover -s tests -v
+      - name: Package verify-core wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build --wheel
+          python -m pip install --no-deps --target /tmp/biocheck-wheel-check dist/biocheck_verify-*.whl
+          test -d /tmp/biocheck-wheel-check/biocheck_engine
+          test ! -d /tmp/biocheck-wheel-check/platform
 
   secret-scan:
     runs-on: ubuntu-latest
@@ -71,8 +78,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build platform container image
         run: docker build -t biocheck-platform:${{ github.sha }} --target production platform/
+      - name: Build verify-core facade container image
+        run: docker build -f Dockerfile.verify-core -t biocheck-verify-core:${{ github.sha }} .
       - name: Record image digest for the release checklist
-        run: docker image inspect biocheck-platform:${{ github.sha }} --format '{{ .Id }}' | tee image-digest.txt
+        run: |
+          {
+            echo "platform=$(docker image inspect biocheck-platform:${{ github.sha }} --format '{{ .Id }}')"
+            echo "verify_core=$(docker image inspect biocheck-verify-core:${{ github.sha }} --format '{{ .Id }}')"
+          } | tee image-digest.txt
       - uses: actions/upload-artifact@v4
         with: { name: image-digest, path: image-digest.txt }
       # Deployment is NOT automated: docs/PRODUCTION_RELEASE_CHECKLIST.md

@@ -6,7 +6,7 @@ Date: 14 July 2026. Prepared for the controlled-pilot go/no-go decision. This is
 
 | Gate | Result | Evidence |
 |---|---|---|
-| Platform test suite | **114 passing** across 7 suites | `platform/tests/*.test.ts` |
+| Platform test suite | **139 passing** across 9 suites | `platform/tests/*.test.ts` |
 | — foundation (tenancy, RBAC, auth, audit) | 20 | foundation.test.ts |
 | — verification core, consent, webhooks | 21 | verification.test.ts |
 | — privacy, encryption, retention, leakage | 17 | privacy.test.ts |
@@ -14,10 +14,12 @@ Date: 14 July 2026. Prepared for the controlled-pilot go/no-go decision. This is
 | — end-to-end tenant journey | 9 | flows.e2e.test.ts |
 | — reliability, jobs, config, observability | 12 | operations.test.ts |
 | — **adversarial pre-pilot review** | **20** | adversarial.test.ts |
-| Engine unit tests (`biocheck_engine`) | 8 passing | `tests/test_engine.py` |
+| — fingerprint contract and isolation | 19 | fingerprint.test.ts |
+| — demo-request lead capture | 6 | leads.test.ts |
+| Engine/API tests (`biocheck_engine`) | 47 passing | `tests/test_*.py` |
 | Type check (tsc) | clean | CI `platform` job |
 | Production build (`next build`) | passing | CI `platform` job |
-| Migration check (empty DB) | all 5 migrations apply | CI `platform` job |
+| Migration check (empty DB) | all 7 migrations apply | CI `platform` job |
 
 Model manifest verification (`scripts/verify_model_manifest.py`) passed for the six SeetaFace6 v1 modules — see SEETAFACE6_BUILD_STATUS.md. Runs on the CI/build host, not against a live model in this environment.
 
@@ -53,9 +55,10 @@ Each row was executed as a deliberate attack in `adversarial.test.ts`. All refus
 1. **Passive PAD effectiveness is unmeasured.** No FAR/FRR/APCER/BPCER numbers exist. The pilot exists to produce them. Until then, no accuracy claim is made and high-impact decisions must not rely on the platform.
 2. **SeetaFace6 provider is not independently certified by BioCheck** (KNOWN_LIMITATIONS.md).
 3. **No production sidecar binary yet** — build on the isolated Linux builder before pilot (SEETAFACE6_BUILD_STATUS.md).
-4. **Independent penetration test not yet performed** — required before production, not before a controlled non-production pilot.
-5. **Browser-level e2e (Playwright)** is specified for CI but the browser runner is not exercised in this environment; the integration-level e2e journey stands in until then.
+4. **verify-core is not hosted yet** — deploy the existing facade privately and wire it to the pinned sidecar before pilot.
+5. **Independent penetration test not yet performed** — required before production, not before a controlled non-production pilot.
+6. **Browser-level e2e (Playwright)** is specified for CI but the browser runner is not exercised in this environment; the integration-level e2e journey stands in until then.
 
 ## 5. Recommendation
 
-**Ready for a controlled, consented, non-production pilot** under `testing/PILOT_PROTOCOL.md`, once the sidecar binary is built and its exact model hashes are registered in a test-only registry. Not ready for, and explicitly gated against, production use. Go/no-go for production is the PRODUCTION_RELEASE_CHECKLIST, not this report.
+**Ready for a controlled, consented, non-production pilot** under `testing/PILOT_PROTOCOL.md`, once the sidecar binary is built, its exact model hashes are registered in a test-only registry, and the existing verify-core facade is deployed privately. Not ready for, and explicitly gated against, production use. Go/no-go for production is the PRODUCTION_RELEASE_CHECKLIST, not this report.
