@@ -23,7 +23,7 @@ jobs:
       - name: Unit / integration / e2e-flow tests (includes tenant-isolation and policy gates)
         run: npm test
       - name: Migration check — full chain applies cleanly to an empty database
-        run: npx tsx -e "const{createPgliteDb}=await import('./src/server/db/client.ts');const{migrate}=await import('./src/server/db/migrate.ts');const db=await createPgliteDb();const ran=await migrate(db);console.log('applied:',ran);if(ran.length===0)throw new Error('no migrations found');await db.close();"
+        run: npx tsx -e "void (async()=>{const{createPgliteDb}=await import('./src/server/db/client.ts');const{migrate}=await import('./src/server/db/migrate.ts');const db=await createPgliteDb();const ran=await migrate(db);console.log('applied:',ran);if(ran.length===0)throw new Error('no migrations found');await db.close()})().catch((error)=>{console.error(error);process.exitCode=1})"
       - name: Build (production bundle)
         run: npm run build
 
@@ -33,10 +33,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install cryptography numpy pydantic
-      - name: biocheck_engine unit tests
+      - run: python -m pip install ".[api]" pytest
+      - name: biocheck_engine tests
         env: { BIOCHECK_MASTER_KEY_B64: "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg=" }
-        run: python -m unittest discover -s tests -v
+        run: python -m pytest -q
       - name: Package verify-core wheel
         run: |
           python -m pip install --upgrade build
@@ -66,7 +66,7 @@ jobs:
       - name: npm audit — CRITICAL findings block the release
         run: npm audit --omit=dev --audit-level=critical
       - name: OSV scan (full tree, informational + critical gate)
-        uses: google/osv-scanner-action/osv-scanner-action@v1
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2e # v2.3.8
         with: { scan-args: "--lockfile=platform/package-lock.json" }
         continue-on-error: false
 
