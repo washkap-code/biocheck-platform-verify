@@ -26,6 +26,24 @@ fingerprint capture exists anywhere in BioCheck yet.**
   completes on the first successful `docker build` + green conformance run on
   a normally-networked machine. Classification: Prototype (unbuilt).
 
+## 17 Jul 2026 — FP-002 + FP-003 (same session)
+
+- `scripts/register_fp_sidecar.py`: operator tool that queries a live sidecar's
+  `/healthz` and emits the two ModelCards (extraction + matcher, distinct IDs,
+  same jar hash) for `VERIFY_CORE_APPROVED_MODELS_JSON`. Requires an explicit
+  `--approved-by` human. 4 tests green against the real registry gate.
+- `platform/src/app/verify/FingerprintFlow.tsx`: consent-first fingerprint
+  capture UI. Probes for the future Capture Agent on `127.0.0.1:9310`
+  (contract for FP-004: `/agent/health`, `/agent/capture`), states plainly when
+  it is absent, and never simulates a scanner. Dev-only image upload is gated
+  by a server-side prop and must never be set in production. All decision
+  states surfaced with honest explanations (PAD review cap, fail-closed
+  SERVICE_UNAVAILABLE, quality guidance).
+- Verification caveat: `tsc --noEmit` clean; the platform vitest suite could
+  not be executed in this session's sandbox (runner hung producing no output —
+  environmental). Run `npm test` in `platform/` on the next machine/CI before
+  any deploy that includes these commits.
+
 ## What was built (15 Jul 2026)
 
 The fingerprint modality now mirrors the face architecture end-to-end, fail-closed:
