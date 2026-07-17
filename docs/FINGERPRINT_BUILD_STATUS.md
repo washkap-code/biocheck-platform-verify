@@ -1,8 +1,30 @@
 # Fingerprint verification — build status
 
-**Last updated:** 15 Jul 2026
-**Honest status: the software contract layer exists and is tested. No real
-fingerprint capture, extraction or matching exists anywhere in BioCheck yet.**
+**Last updated:** 17 Jul 2026
+**Honest status: the software contract layer exists and is tested. A SourceAFIS
+sidecar implementation is authored but not yet compiled or run. No real
+fingerprint capture exists anywhere in BioCheck yet.**
+
+## 17 Jul 2026 — FP-001: SourceAFIS sidecar authored
+
+- `docs/FP_MISSION_PACK.md` added — full build plan (FP-000 … FP-007), engine
+  and scanner decisions, and the procurement guide
+  (`BioCheck_Fingerprint_Hardware_Procurement_Guide.pdf` at project root).
+- `sidecar-fingerprint/` added: Java 17 service wrapping SourceAFIS 3.18.1
+  implementing the wire contract in `providers/fingerprint.py` exactly
+  (`/v1/analyse`, `/v1/compare`, `/healthz`), Maven build, multi-stage
+  Dockerfile, README. Documented placeholder mappings: score
+  `min(raw,100)/100`; quality `min(1, minutiae/40)` (NFIQ2 planned). PAD is
+  never synthesised (`pad: null`). Distinct extraction/matcher model IDs, jar
+  SHA-256 reported for registry pinning.
+- `tests/test_fp_sidecar_conformance.py` added: 5 live-service conformance
+  tests (contract fields, score ordering, auth required, retain_image refused,
+  health identity) using an in-process synthetic PNG generator. Skipped unless
+  `FP_SIDECAR_URL` is set; full suite remains green (47 passed, 5 skipped).
+- **Not done, stated plainly:** the sidecar has not been compiled or run —
+  Maven Central is unreachable from the build sandbox. FP-001 acceptance
+  completes on the first successful `docker build` + green conformance run on
+  a normally-networked machine. Classification: Prototype (unbuilt).
 
 ## What was built (15 Jul 2026)
 
