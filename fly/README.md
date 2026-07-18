@@ -22,7 +22,7 @@ fly auth signup            # or fly auth login; add payment method when asked
 fly apps create biocheck-fp-sidecar
 fly ips allocate-v6 --private --app biocheck-fp-sidecar
 fly secrets set --app biocheck-fp-sidecar FP_SIDECAR_API_KEY=$(openssl rand -base64 32 | tee /tmp/fpkey)
-fly deploy --config fly/fly.fp-sidecar.toml
+cd sidecar-fingerprint && fly deploy && cd ..
 
 # 2. verify-core facade — public HTTPS, Bearer auth
 fly apps create biocheck-verify-core
