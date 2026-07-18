@@ -44,6 +44,22 @@ fingerprint capture exists anywhere in BioCheck yet.**
   environmental). Run `npm test` in `platform/` on the next machine/CI before
   any deploy that includes these commits.
 
+## 18 Jul 2026 — Verify Lab (console testing surface)
+
+- `app/console/verify-lab/` + `app/api/console/verify-lab/`: signed-in console
+  users can exercise the REAL enrol/verify pipeline (capture sessions, policy,
+  model governance, audit) for both modalities. The tenant API key is held in
+  an HttpOnly cookie scoped to the lab endpoints, re-authenticated on every
+  call, and **production-kind environment keys are refused**. Audit
+  attribution stays on the API key, identical to /v1 traffic. Dev-only image
+  upload for fingerprint is double-gated (server env + component prop).
+- Fix `53f963c`: cookie constants moved to `server/console/labCookie.ts` —
+  Next.js route modules may only export handlers.
+- Verification caveat: neither `tsc --noEmit` nor vitest could complete in
+  this session's sandbox (filesystem mount degraded; processes hung with no
+  CPU). Before deploying: `npx tsc --noEmit && npm test` in `platform/`.
+  The lab files were hand-audited against service/type signatures.
+
 ## What was built (15 Jul 2026)
 
 The fingerprint modality now mirrors the face architecture end-to-end, fail-closed:
