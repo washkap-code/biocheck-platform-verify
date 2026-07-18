@@ -1,0 +1,41 @@
+# Fly.io config — verify-core facade (public HTTPS, Bearer auth).
+# Deploy from the repo root:
+#   fly deploy --config fly/fly.verify-core.toml --dockerfile Dockerfile.verify-core
+app = "biocheck-verify-core"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "../Dockerfile.verify-core"
+
+[env]
+  APP_ENV = "staging"
+  # Allow plain HTTP to Fly-internal service-discovery hostnames only
+  # (.flycast/.internal). Public hosts still require HTTPS — tested.
+  VERIFY_CORE_FP_PRIVATE_NETWORK = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"    # verification must not cold-start mid-capture
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "20s"
+  method = "GET"
+  path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# Secrets (never in this file) — set with:
+#   fly secrets set --app biocheck-verify-core \
+#     VERIFY_CORE_API_KEY=<value from platform/.env.vercel> \
+#     VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.flycast:8081 \
+#     VERIFY_CORE_FP_SIDECAR_API_KEY=<generate: openssl rand -base64 32> \
+#     VERIFY_CORE_APPROVED_MODELS_JSON=<output of scripts/register_fp_sidecar.py>
+# Face sidecar vars (VERIFY_CORE_SIDECAR_URL/_API_KEY) are added once the
+# SeetaFace6 image is built per docs/SEETAFACE6_BUILD_STATUS.md.

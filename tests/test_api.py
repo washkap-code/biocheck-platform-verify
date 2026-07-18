@@ -48,12 +48,31 @@ class TestHealthAndConfig:
         assert res.status_code == 200
         assert res.json()["adapter"] == "DevFixtureAdapter"
 
-    def test_refuses_to_start_with_no_adapter_configured(self, monkeypatch):
+    def test_refuses_to_start_with_no_adapter_of_any_modality(self, monkeypatch):
         monkeypatch.delenv("VERIFY_CORE_DEV_FIXTURES", raising=False)
         monkeypatch.delenv("VERIFY_CORE_SIDECAR_URL", raising=False)
+        monkeypatch.delenv("VERIFY_CORE_FP_SIDECAR_URL", raising=False)
         from biocheck_engine import api as api_module
-        with pytest.raises(RuntimeError, match="No face-analysis adapter configured"):
+        with pytest.raises(RuntimeError, match="at least one modality is required"):
             importlib.reload(api_module)
+
+    def test_fingerprint_only_deployment_boots_and_face_fails_closed(self, monkeypatch):
+        """Face sidecar absent + fingerprint sidecar configured: valid deployment;
+        face endpoints 503 fail-closed instead of refusing to boot."""
+        monkeypatch.delenv("VERIFY_CORE_DEV_FIXTURES", raising=False)
+        monkeypatch.delenv("VERIFY_CORE_SIDECAR_URL", raising=False)
+        monkeypatch.setenv("VERIFY_CORE_FP_SIDECAR_URL", "http://localhost:8081")
+        monkeypatch.setenv("VERIFY_CORE_FP_SIDECAR_API_KEY", "k")
+        monkeypatch.delenv("VERIFY_CORE_API_KEY", raising=False)
+        from biocheck_engine.api import create_app
+        from fastapi.testclient import TestClient
+        client = TestClient(create_app())
+        health = client.get("/health").json()
+        assert health["adapter"] is None
+        assert health["fingerprint_adapter"] == "FingerprintSidecar"
+        res = client.post("/v1/analyse", json={
+            "image_b64": "aGk=", "challenge_id": "c", "retain_image": False})
+        assert res.status_code == 503
 
     def test_dev_fixtures_refused_in_production(self, monkeypatch):
         monkeypatch.setenv("APP_ENV", "production")

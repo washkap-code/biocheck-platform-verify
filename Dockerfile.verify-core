@@ -1,0 +1,19 @@
+# BioCheck verify-core facade (biocheck_engine.api) — Phase B hosting.
+# Build:  docker build -f Dockerfile.verify-core -t biocheck/verify-core:0.1.0 .
+# Run:    docker run -e VERIFY_CORE_API_KEY=... -p 8080:8080 biocheck/verify-core:0.1.0
+#
+# Posture: this container is the ONLY publicly reachable engine component
+# (Bearer-auth in Phase B; mTLS in Phase C). Face/fingerprint sidecars are
+# reached over the private network only. Without sidecar env vars configured
+# the facade fails closed — endpoints return 503, never a simulation.
+FROM python:3.12-slim
+RUN useradd --system --no-create-home verifycore
+WORKDIR /app
+COPY pyproject.toml ./
+COPY biocheck_engine ./biocheck_engine
+RUN pip install --no-cache-dir ".[api]"
+USER verifycore
+EXPOSE 8080
+# Single worker: the in-memory capture stores are per-process by design.
+# Scale vertically or move stores to Redis before adding workers.
+CMD ["uvicorn", "biocheck_engine.api:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

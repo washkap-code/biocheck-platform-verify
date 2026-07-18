@@ -150,7 +150,10 @@ def _load_model_registry() -> ModelRegistry:
 
 def _load_adapter(registry: ModelRegistry):
     """Explicit config only, never a silent fallback — mirrors
-    platform/src/server/api/http.ts's getProvider()."""
+    platform/src/server/api/http.ts's getProvider(). Like the fingerprint
+    adapter this may return None: a fingerprint-only deployment is valid and
+    every face endpoint then fails closed with 503. create_app() still refuses
+    to boot when NO adapter of any modality is configured."""
     sidecar_url = os.environ.get("VERIFY_CORE_SIDECAR_URL")
     if sidecar_url:
         api_key = os.environ.get("VERIFY_CORE_SIDECAR_API_KEY")
@@ -160,11 +163,7 @@ def _load_adapter(registry: ModelRegistry):
     if os.environ.get("VERIFY_CORE_DEV_FIXTURES", "").lower() == "true":
         from .dev_fixture_adapter import DevFixtureAdapter
         return DevFixtureAdapter()
-    raise RuntimeError(
-        "No face-analysis adapter configured. Set VERIFY_CORE_SIDECAR_URL (+ "
-        "VERIFY_CORE_SIDECAR_API_KEY) for the real SeetaFace6 sidecar, or "
-        "VERIFY_CORE_DEV_FIXTURES=true for local development only."
-    )
+    return None
 
 
 def _load_fingerprint_adapter(registry: ModelRegistry):
@@ -177,7 +176,9 @@ def _load_fingerprint_adapter(registry: ModelRegistry):
         if not api_key:
             raise RuntimeError(
                 "VERIFY_CORE_FP_SIDECAR_API_KEY is required when VERIFY_CORE_FP_SIDECAR_URL is set.")
-        return FingerprintSidecar(sidecar_url, api_key, registry)
+        allow_private = os.environ.get("VERIFY_CORE_FP_PRIVATE_NETWORK", "").lower() == "true"
+        return FingerprintSidecar(sidecar_url, api_key, registry,
+                                  allow_private_network=allow_private)
     if os.environ.get("VERIFY_CORE_DEV_FIXTURES", "").lower() == "true":
         from .dev_fixture_adapter import DevFingerprintFixtureAdapter
         return DevFingerprintFixtureAdapter()
@@ -188,6 +189,14 @@ def create_app() -> FastAPI:
     registry = _load_model_registry()
     adapter = _load_adapter(registry)
     fp_adapter = _load_fingerprint_adapter(registry)
+    if adapter is None and fp_adapter is None:
+        raise RuntimeError(
+            "No face-analysis adapter configured. Set VERIFY_CORE_SIDECAR_URL (+ "
+            "VERIFY_CORE_SIDECAR_API_KEY) for the real SeetaFace6 sidecar, or "
+            "VERIFY_CORE_DEV_FIXTURES=true for local development only. "
+            "(A fingerprint-only deployment is valid — configure "
+            "VERIFY_CORE_FP_SIDECAR_URL — but at least one modality is required.)"
+        )
     captures = _CaptureStore()
     fp_captures = _CaptureStore(prefix="vcfp")
     expected_key = os.environ.get("VERIFY_CORE_API_KEY")
@@ -215,7 +224,7 @@ def create_app() -> FastAPI:
     async def health() -> dict:
         return {
             "status": "ok",
-            "adapter": adapter.__class__.__name__,
+            "adapter": adapter.__class__.__name__ if adapter else None,
             "fingerprint_adapter": fp_adapter.__class__.__name__ if fp_adapter else None,
         }
 
@@ -225,6 +234,12 @@ def create_app() -> FastAPI:
                 503, "Fingerprint verification is not configured; failing closed.")
         return fp_adapter
 
+    def require_face_adapter():
+        if adapter is None:
+            raise HTTPException(
+                503, "Face verification is not configured; failing closed.")
+        return adapter
+
     @app.post("/v1/analyse", dependencies=[Depends(require_auth)])
     async def analyse(body: AnalyseRequest) -> dict:
         try:
@@ -233,8 +248,9 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "image_b64 is not valid base64.")
         if not image_bytes or len(image_bytes) > 8 * 1024 * 1024:
             raise HTTPException(400, "Capture must be non-empty and below 8 MiB.")
+        active_face = require_face_adapter()
         try:
-            result: SeetaFaceAnalysis = adapter.analyse(image_bytes, body.challenge_id)
+            result: SeetaFaceAnalysis = active_face.analyse(image_bytes, body.challenge_id)
         except PermissionError:
             raise HTTPException(409, "Model is not in the approved registry.")
         except (ValueError, KeyError):

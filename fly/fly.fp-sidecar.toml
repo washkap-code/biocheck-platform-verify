@@ -1,0 +1,28 @@
+# Fly.io config — SourceAFIS fingerprint sidecar (PRIVATE network only).
+# Deploy from the repo root:
+#   fly deploy --config fly/fly.fp-sidecar.toml
+# No [http_service] section on purpose: the app gets NO public ingress.
+# verify-core reaches it via Flycast private load balancing at
+# http://biocheck-fp-sidecar.flycast:8081 after:
+#   fly ips allocate-v6 --private --app biocheck-fp-sidecar
+app = "biocheck-fp-sidecar"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "../sidecar-fingerprint/Dockerfile"
+
+[[services]]
+  internal_port = 8081
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 8081
+    handlers = []
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"          # JVM headroom; raise if 1:N index grows
+
+# Secrets:
+#   fly secrets set --app biocheck-fp-sidecar FP_SIDECAR_API_KEY=<same value as
+#   VERIFY_CORE_FP_SIDECAR_API_KEY on verify-core>

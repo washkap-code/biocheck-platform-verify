@@ -48,13 +48,23 @@ class FingerprintSidecar:
     includes the exact deployed model/algorithm file hash in every response.
     """
 
+    #: Suffixes of orchestrator-internal service-discovery domains that are
+    #: unreachable from the public internet (Fly.io private networking).
+    #: Plain HTTP is permitted to these ONLY with allow_private_network=True.
+    _PRIVATE_SUFFIXES = (".flycast", ".internal")
+
     def __init__(self, endpoint: str, api_key: str, registry: ModelRegistry,
-                 transport: Callable[[Request], bytes] | None = None) -> None:
+                 transport: Callable[[Request], bytes] | None = None,
+                 allow_private_network: bool = False) -> None:
         parsed = urlparse(endpoint)
         if parsed.scheme not in {"https", "http"}:
             raise ValueError("Fingerprint endpoint must be an HTTP(S) URL.")
-        if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
-            raise ValueError("Production fingerprint endpoint must use HTTPS/mTLS.")
+        if parsed.scheme != "https":
+            host = parsed.hostname or ""
+            private = allow_private_network and host.endswith(self._PRIVATE_SUFFIXES)
+            if host not in {"localhost", "127.0.0.1"} and not private:
+                raise ValueError("Production fingerprint endpoint must use HTTPS/mTLS, "
+                                 "or an explicitly allowed private-network hostname.")
         self.base = endpoint.rstrip("/")
         self.api_key = api_key
         self.registry = registry
