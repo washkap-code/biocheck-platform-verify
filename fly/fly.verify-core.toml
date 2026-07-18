@@ -34,7 +34,7 @@ primary_region = "lhr"
 # Secrets (never in this file) — set with:
 #   fly secrets set --app biocheck-verify-core \
 #     VERIFY_CORE_API_KEY=<value from platform/.env.vercel> \
-#     VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.flycast:8081 \
+#     VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.internal:8081 \
 #     VERIFY_CORE_FP_SIDECAR_API_KEY=<generate: openssl rand -base64 32> \
 #     VERIFY_CORE_APPROVED_MODELS_JSON=<output of scripts/register_fp_sidecar.py>
 # Face sidecar vars (VERIFY_CORE_SIDECAR_URL/_API_KEY) are added once the

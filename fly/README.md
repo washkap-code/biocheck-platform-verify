@@ -20,7 +20,6 @@ fly auth signup            # or fly auth login; add payment method when asked
 
 # 1. Fingerprint sidecar — PRIVATE, no public ingress
 fly apps create biocheck-fp-sidecar
-fly ips allocate-v6 --private --app biocheck-fp-sidecar
 fly secrets set --app biocheck-fp-sidecar FP_SIDECAR_API_KEY=$(openssl rand -base64 32 | tee /tmp/fpkey)
 cd sidecar-fingerprint && fly deploy && cd ..
 
@@ -28,7 +27,7 @@ cd sidecar-fingerprint && fly deploy && cd ..
 fly apps create biocheck-verify-core
 fly secrets set --app biocheck-verify-core \
   VERIFY_CORE_API_KEY=<VERIFY_CORE_API_KEY value from platform/.env.vercel> \
-  VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.flycast:8081 \
+  VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.internal:8081 \
   VERIFY_CORE_FP_SIDECAR_API_KEY=$(cat /tmp/fpkey)
 fly deploy --config fly/fly.verify-core.toml --dockerfile Dockerfile.verify-core
 rm /tmp/fpkey
