@@ -14,7 +14,7 @@ import { errorResponse, getFingerprintProvider, getProvider } from "@/server/api
 import {
   enrolFingerprint, enrolSubject, verifyFingerprint, verifySubject, VerificationError,
 } from "@/server/verification/service";
-import { LAB_COOKIE } from "../route";
+import { LAB_COOKIE } from "@/server/console/labCookie";
 
 export const dynamic = "force-dynamic";
 

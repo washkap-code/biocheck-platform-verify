@@ -23,12 +23,9 @@ import { getAuthContext, getDb } from "@/server/runtime";
 import { authenticateApiKey } from "@/server/apikeys/service";
 import { errorResponse } from "@/server/api/http";
 import { createCaptureSession, VerificationError } from "@/server/verification/service";
+import { LAB_COOKIE, LAB_COOKIE_MAX_AGE_S, LAB_COOKIE_PATH } from "@/server/console/labCookie";
 
 export const dynamic = "force-dynamic";
-
-export const LAB_COOKIE = "biocheck_vl_key";
-const COOKIE_PATH = "/api/console/verify-lab";
-const COOKIE_MAX_AGE_S = 2 * 60 * 60;
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,14 +50,14 @@ export async function POST(request: NextRequest) {
       const res = NextResponse.json({ ok: true, environmentKind: principal.environmentKind, projectId: principal.projectId });
       res.cookies.set(LAB_COOKIE, body.apiKey, {
         httpOnly: true, sameSite: "strict", secure: process.env.NODE_ENV === "production",
-        path: COOKIE_PATH, maxAge: COOKIE_MAX_AGE_S,
+        path: LAB_COOKIE_PATH, maxAge: LAB_COOKIE_MAX_AGE_S,
       });
       return res;
     }
 
     if (body.action === "reset") {
       const res = NextResponse.json({ ok: true });
-      res.cookies.set(LAB_COOKIE, "", { httpOnly: true, sameSite: "strict", path: COOKIE_PATH, maxAge: 0 });
+      res.cookies.set(LAB_COOKIE, "", { httpOnly: true, sameSite: "strict", path: LAB_COOKIE_PATH, maxAge: 0 });
       return res;
     }
 
