@@ -389,6 +389,9 @@ def create_app() -> FastAPI:
         return {"template_ciphertext": ciphertext, "model_id": record.model_id,
                 "model_sha256": record.model_sha256}
 
+    from .api_context import create_context_router
+    app.include_router(create_context_router(Depends(require_auth)))
+
     @app.post("/v1/fingerprint/compare", dependencies=[Depends(require_auth)])
     async def fp_compare(body: CompareRequest) -> dict:
         active = require_fp_adapter()
