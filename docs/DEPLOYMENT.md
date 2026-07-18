@@ -26,7 +26,7 @@ Without Docker: `cd platform && DB_DRIVER=pglite npm run dev` plus `npx tsx src/
 - Platform container (`Dockerfile` target `production`, non-root) behind a TLS-terminating load balancer. Health: `/api/health` (liveness), `/api/ready` (readiness).
 - Worker container (same image, worker entrypoint), ≥1 replica; jobs are claim-atomic so replicas are safe.
 - Managed Postgres with WAL archiving (see runbook), managed Redis, S3-compatible object store with no public access.
-- **verify-core + SeetaFace6 sidecar live on a private network segment**: no public ingress, mTLS from the platform, read-only model mounts, model hashes pinned in the registry. Built on the isolated Linux builder per `docs/SEETAFACE6_BUILD_STATUS.md` — never in this compose file, never on a shared host.
+- **verify-core facade + SeetaFace6 sidecar live on a private network segment**: no public ingress, mTLS from the platform, read-only model mounts, model hashes pinned in the registry. The facade is packaged by `Dockerfile.verify-core`; deploy it using `docs/VERIFY_CORE_DEPLOYMENT.md`. The native sidecar is built on the isolated Linux builder per `docs/SEETAFACE6_BUILD_STATUS.md` — never in this compose file, never on a shared host.
 - Secrets injected via the platform's secret manager; images contain none (CI secret-scan gates).
 
 ## Release flow

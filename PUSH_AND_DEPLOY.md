@@ -1,6 +1,6 @@
 # Push & deploy — exact steps (run on your accounts)
 
-The repo is committed and packaged. These are the commands that must run against **your** GitHub / hosting / cloud — I can't run them from the build session because it has no access to your accounts. Copy-paste in order.
+The repository is hosted on GitHub. These are the remaining staging deployment steps; production is still manually gated.
 
 > Reality check before you start: this is a full-stack app with a database, a
 > private Python verify-core service and a native C++ sidecar. Steps 1–2 get the
@@ -25,7 +25,7 @@ git branch -M main
 git push -u origin main
 ```
 
-CI (`.github/workflows/ci.yml`) runs automatically on push: typecheck, 114 platform + 8 engine tests, migration check, secret scan, dependency scan, build. Confirm it's green before deploying.
+CI (`.github/workflows/ci.yml`) runs automatically on push: typecheck, 139 platform + 47 engine/API tests, migration check, package check, secret scan, dependency scan, and both container builds. Confirm it is green before deploying.
 
 ## 2. Provision the backing services (staging first)
 
@@ -40,7 +40,7 @@ The app **refuses to boot** without these — that's intentional.
 
 ```bash
 cd platform
-DATABASE_URL=postgres://…  npm run migrate    # applies 0001–0005
+DATABASE_URL=postgres://…  npm run migrate    # applies 0001–0007
 ```
 
 ## 4. Deploy the app
@@ -69,14 +69,15 @@ docker build -t biocheck-platform --target production platform/
 This never goes on Vercel. On an isolated Linux host:
 
 1. Build the sidecar per `docs/SEETAFACE6_BUILD_STATUS.md` (clone pinned commits, apply `native-patches/0001-tennis-gcc13-cstdlib.patch`, build the 8 units). Record binary hashes + compiler + OS digest.
-2. Implement the verify-core FastAPI facade (`/v1/analyse`, `/v1/templates`, `/v1/compare`) — the platform client and wire contract are already defined in `platform/src/server/verification/providers.ts`.
+2. Build and deploy the existing verify-core FastAPI facade with `Dockerfile.verify-core`, following `docs/VERIFY_CORE_DEPLOYMENT.md`.
 3. Put an mTLS gateway in front; expose it privately as `VERIFY_CORE_URL`.
 4. Register the exact model SHA-256s (`scripts/verify_model_manifest.py`) in the model registry via `/admin/platform`.
 
-## 6. Drop in the approved brand assets
+## 6. Confirm the approved brand assets
 
-Copy the three Concept 1 SVGs from the brand kit into `platform/public/brand/`:
-`biocheck-primary-dark.svg`, `biocheck-primary-light.svg`, `biocheck-icon.svg` (names referenced by `components/brand/Logo.tsx`).
+The three approved Concept 1 SVGs are already in `platform/public/brand/`:
+`biocheck-primary-dark.svg`, `biocheck-primary-light.svg`, `biocheck-icon.svg`.
+Confirm they render correctly in the deployed marketing header and footer.
 
 ## 7. Verify staging
 
@@ -85,6 +86,6 @@ Copy the three Concept 1 SVGs from the brand kit into `platform/public/brand/`:
 ---
 
 ### What I can do from here to help further
-- If you connect a GitHub or Vercel connector in your claude.ai settings, I can drive steps 1 and 4 directly next session.
-- I can build the verify-core FastAPI facade now (step 5.2) — it's self-contained and doesn't need your infra.
+- I can drive the GitHub and Vercel steps when the connectors target the correct accounts.
+- I can help deploy the existing verify-core facade and validate its private sidecar contract.
 - I can write the concrete AWS/GCP `KmsAdapter` implementation for whichever KMS you pick.

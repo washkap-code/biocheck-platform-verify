@@ -20,13 +20,15 @@ Operational: `GET /api/health` (liveness), `GET /api/ready` (readiness), `GET /a
 
 Console/admin pages: `/console`, `/console/projects`, `/admin/audit`, `/admin/security`, `/admin/reviews`, `/admin/platform`. Marketing: `/`, `/request-demo`, `/developers`.
 
-## Database (5 migrations)
+## Database (7 migrations)
 
 - `0001_init` — organisations, workspaces, projects, environments, users, memberships, sessions, recovery_codes, invitations, sso_connections, api_keys, ip_allowlist, audit_events (append-only trigger + hash chain).
 - `0002_verification` — subjects, consent_receipts, verification_policies (immutable trigger), capture_sessions, reference_templates (ciphertext only), verification_attempts, review_cases, model_registry, webhook_endpoints/deliveries, idempotency_keys.
 - `0003_privacy` — tenant_keys, evidence_objects, subject_requests, legal_holds, data_residency, transfer_register.
 - `0004_documents` — document_checks, review_cases dual-control columns, org_settings, device_attestations, risk_signals.
 - `0005_jobs` — jobs, audit_exports.
+- `0006_fingerprint` — modality-bound capture sessions, fingerprint policies and active environment policy references.
+- `0007_demo_requests` — consented, minimal-PII marketing lead capture with salted IP hashes.
 
 ## Roles
 
@@ -43,7 +45,7 @@ API-key scopes: `verification:create`, `verification:read`, `enrolment:create`, 
 ```bash
 cd platform && cp .env.example .env.local   # fill values
 npm install
-npm test          # 114 tests
+npm test          # 139 tests
 npm run seed      # fake demo data
 npm run dev
 # or the full stack:
@@ -52,22 +54,21 @@ docker compose up  # app, worker, postgres, redis, fake sidecar
 
 ## Test results (this build)
 
-Platform **114/114** vitest (foundation 20, verification 21, privacy 17, documents 15, e2e 9, operations 12, adversarial 20). Engine **8/8** unittest. tsc clean. `next build` passing. 5/5 migrations apply to an empty DB. Model manifest verification passes for six SeetaFace6 modules on the build host.
+Platform **139/139** vitest across 9 suites (including fingerprint isolation and lead capture). Engine/API **47/47** tests. tsc clean. `next build` passing. 7/7 migrations apply to an empty DB. Model manifest verification passes for six SeetaFace6 modules on the build host.
 
 ## Exact human approvals / actions still required
 
 Engineering / infrastructure (owner: Washington's team):
 
 1. Build the SeetaFace6 sidecar on an isolated Linux builder; record binary hashes, compiler and OS digest (SEETAFACE6_BUILD_STATUS.md).
-2. Implement the verify-core FastAPI facade (`/v1/analyse`, `/v1/templates`, `/v1/compare`) — platform client + contract already defined.
+2. Deploy the existing verify-core FastAPI facade behind HTTPS/mTLS and connect it to the sidecar (`VERIFY_CORE_DEPLOYMENT.md`).
 3. Configure a production KMS/HSM adapter; register exact model hashes in a test-only registry for the pilot.
-4. Drop the approved Concept 1 logo SVGs into `platform/public/brand/`.
-5. Run an independent penetration test (before production, not before pilot).
+4. Run an independent penetration test (before production, not before pilot).
 
 Governance / human sign-off (PRODUCTION_RELEASE_CHECKLIST.md):
 
-6. Approved model cards: licence review, independent 1:1 + PAD test reports, demographic breakdowns, threshold calibration.
-7. Signed controlled-pilot report per `testing/PILOT_PROTOCOL.md` (30+ consented adult volunteers; FRR + FAR/APCER proxy via `scripts/summarise_pilot_results.py`).
-8. DPIA per launching tenant; named release approver; marketing/claims check.
+5. Approved model cards: licence review, independent 1:1 + PAD test reports, demographic breakdowns, threshold calibration.
+6. Signed controlled-pilot report per `testing/PILOT_PROTOCOL.md` (30+ consented adult volunteers; FRR + FAR/APCER proxy via `scripts/summarise_pilot_results.py`).
+7. DPIA per launching tenant; named release approver; marketing/claims check.
 
-Until items 1–8 are complete and signed, BioCheck stays in controlled-pilot posture. It is not certified, its accuracy and liveness performance are unmeasured, and no production or high-impact decision should rely on it (KNOWN_LIMITATIONS.md).
+Until items 1–7 are complete and signed, BioCheck stays in controlled-pilot posture. It is not certified, its accuracy and liveness performance are unmeasured, and no production or high-impact decision should rely on it (KNOWN_LIMITATIONS.md).
