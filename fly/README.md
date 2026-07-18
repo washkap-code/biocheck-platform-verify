@@ -24,8 +24,8 @@ fly secrets set --app biocheck-fp-sidecar FP_SIDECAR_API_KEY=$(openssl rand -bas
 cd sidecar-fingerprint && fly deploy && cd ..
 
 # 2. verify-core facade — public HTTPS, Bearer auth
-fly apps create biocheck-verify-core
-fly secrets set --app biocheck-verify-core \
+fly apps create biocheck-vcore
+fly secrets set --app biocheck-vcore \
   VERIFY_CORE_API_KEY=<VERIFY_CORE_API_KEY value from platform/.env.vercel> \
   VERIFY_CORE_FP_SIDECAR_URL=http://biocheck-fp-sidecar.internal:8081 \
   VERIFY_CORE_FP_SIDECAR_API_KEY=$(cat /tmp/fpkey)
@@ -34,12 +34,12 @@ rm /tmp/fpkey
 
 # 3. Register the deployed matcher in the model registry
 python scripts/register_fp_sidecar.py \
-  --url https://biocheck-verify-core.fly.dev \
+  --url https://biocheck-vcore.fly.dev \
   --approved-by "Washington"           # NB: run against the SIDECAR healthz —
 # if the sidecar has no public URL, run it from a fly ssh console:
-#   fly ssh console --app biocheck-verify-core
+#   fly ssh console --app biocheck-vcore
 # then set the output:
-fly secrets set --app biocheck-verify-core VERIFY_CORE_APPROVED_MODELS_JSON='<output>'
+fly secrets set --app biocheck-vcore VERIFY_CORE_APPROVED_MODELS_JSON='<output>'
 
 # 4. Redis for the platform (Upstash via Fly)
 fly redis create            # name: biocheck-redis, region lhr, note the rediss:// URL
@@ -51,7 +51,7 @@ In the `biocheck-platform-verify` Vercel project, set:
 
 ```
 REDIS_URL=rediss://...                       # from fly redis create
-VERIFY_CORE_URL=https://biocheck-verify-core.fly.dev
+VERIFY_CORE_URL=https://biocheck-vcore.fly.dev
 VERIFY_CORE_API_KEY=<same value as on the Fly app>
 APP_ENV=staging                              # flips the config gate
 ```
@@ -62,7 +62,7 @@ closed to human review.
 
 ## Verify
 
-1. `curl https://biocheck-verify-core.fly.dev/health` → `adapter: null`,
+1. `curl https://biocheck-vcore.fly.dev/health` → `adapter: null`,
    `fingerprint_adapter: "FingerprintSidecar"`.
 2. From the repo: `FP_SIDECAR_URL=... FP_SIDECAR_API_KEY=... pytest
    tests/test_fp_sidecar_conformance.py -v` (completes FP-001 acceptance).

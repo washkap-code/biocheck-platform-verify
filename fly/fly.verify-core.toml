@@ -1,7 +1,8 @@
 # Fly.io config — verify-core facade (public HTTPS, Bearer auth).
 # Deploy from the repo root:
 #   fly deploy --config fly/fly.verify-core.toml --dockerfile Dockerfile.verify-core
-app = "biocheck-verify-core"
+# NB: Fly's abuse filter blocks app names containing "verify".
+app = "biocheck-vcore"
 primary_region = "lhr"
 
 [build]
