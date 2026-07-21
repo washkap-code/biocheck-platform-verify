@@ -56,6 +56,8 @@ describe("environment configuration", () => {
     VERIFY_CORE_URL: "https://verify-core.internal",
     VERIFY_CORE_API_KEY: "x".repeat(32),
     REDIS_URL: "redis://redis.internal:6379",
+    BIOCHECK_KMS_PROVIDER: "aws",
+    BIOCHECK_KMS_KEY_ID: "arn:aws:kms:eu-west-1:123456789012:key/abc-123",
   };
 
   it("accepts development with PGlite and production with full config", () => {
@@ -72,8 +74,14 @@ describe("environment configuration", () => {
     expect(() => validateConfig({ ...prodBase, BIOCHECK_MASTER_KEY_B64: "abc" })).toThrow(/KMS/);
   });
 
-  it("staging is hardened like production except the env master key", () => {
-    expect(validateConfig({ ...prodBase, APP_ENV: "staging", BIOCHECK_MASTER_KEY_B64: Buffer.alloc(32, 1).toString("base64url") }).appEnv).toBe("staging");
+  it("production requires a real KMS provider, not the local dev adapter", () => {
+    expect(() => validateConfig({ ...prodBase, BIOCHECK_KMS_PROVIDER: undefined })).toThrow(/BIOCHECK_KMS_PROVIDER/);
+    expect(() => validateConfig({ ...prodBase, BIOCHECK_KMS_PROVIDER: "local" })).toThrow(/BIOCHECK_KMS_PROVIDER/);
+    expect(() => validateConfig({ ...prodBase, BIOCHECK_KMS_KEY_ID: undefined })).toThrow(/BIOCHECK_KMS_KEY_ID/);
+  });
+
+  it("staging is hardened like production except the env master key and KMS provider", () => {
+    expect(validateConfig({ ...prodBase, APP_ENV: "staging", BIOCHECK_MASTER_KEY_B64: Buffer.alloc(32, 1).toString("base64url"), BIOCHECK_KMS_PROVIDER: undefined, BIOCHECK_KMS_KEY_ID: undefined }).appEnv).toBe("staging");
     expect(() => validateConfig({ APP_ENV: "staging" })).toThrow(ConfigError);
   });
 });
@@ -173,7 +181,7 @@ describe("maintenance jobs", () => {
   });
 
   it("keys.rotation_reminder flags overdue tenant keys", async () => {
-    const registry = buildRegistry({ storage });
+    const registry = buildRegistry({ storage, kms: new LocalKmsAdapter() });
     await rotateTenantDek(db, new LocalKmsAdapter(), orgId); // ensures a key exists
     await db.query(`UPDATE tenant_keys SET rotate_due_at = now() - interval '1 day' WHERE organisation_id = $1 AND status = 'active'`, [orgId]);
     await scheduleJob(db, "keys.rotation_reminder", {}, { dedupeKey: `rot-${randomUUID()}` });
@@ -181,6 +189,35 @@ describe("maintenance jobs", () => {
     const flagged = await db.query(
       `SELECT 1 FROM audit_events WHERE action = 'key.rotation_overdue' AND organisation_id = $1`, [orgId]);
     expect(flagged.rows.length).toBeGreaterThan(0);
+  });
+
+  it("keys.rotation_execute actually rotates overdue tenant keys and retires the old version", async () => {
+    const kms = new LocalKmsAdapter();
+    const registry = buildRegistry({ storage, kms });
+    const rotOrgId = await createOrganisation(db, ownerCtx, "P6 Rotation Org", `p6-rot-${randomUUID().slice(0, 8)}`);
+    const before = await rotateTenantDek(db, kms, rotOrgId); // creates version 1, then rotates to version 2
+    await db.query(`UPDATE tenant_keys SET rotate_due_at = now() - interval '1 day' WHERE organisation_id = $1 AND status = 'active'`, [rotOrgId]);
+
+    await scheduleJob(db, "keys.rotation_execute", {}, { dedupeKey: `rotx-${randomUUID()}` });
+    await runDueJobs(db, registry);
+
+    const active = await db.query<{ key_version: number; status: string }>(
+      `SELECT key_version, status FROM tenant_keys WHERE organisation_id = $1 AND status = 'active'`, [rotOrgId]);
+    expect(active.rows).toHaveLength(1);
+    expect(active.rows[0].key_version).toBe(before + 1); // a new version was actually issued
+    const retired = await db.query<{ status: string }>(
+      `SELECT status FROM tenant_keys WHERE organisation_id = $1 AND key_version = $2`, [rotOrgId, before]);
+    expect(retired.rows[0].status).toBe("retired");
+    const executed = await db.query(
+      `SELECT 1 FROM audit_events WHERE action = 'key.rotation_executed' AND organisation_id = $1`, [rotOrgId]);
+    expect(executed.rows.length).toBeGreaterThan(0);
+
+    // idempotent: running again immediately does nothing more (new key isn't overdue yet)
+    await scheduleJob(db, "keys.rotation_execute", {}, { dedupeKey: `rotx2-${randomUUID()}` });
+    await runDueJobs(db, registry);
+    const stillActive = await db.query<{ key_version: number }>(
+      `SELECT key_version FROM tenant_keys WHERE organisation_id = $1 AND status = 'active'`, [rotOrgId]);
+    expect(stillActive.rows[0].key_version).toBe(before + 1);
   });
 
   it("models.expiry_alert expires overdue models and notifies subscribers", async () => {

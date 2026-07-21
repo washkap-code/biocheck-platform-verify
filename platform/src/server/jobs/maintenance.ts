@@ -9,13 +9,17 @@ import { JobRegistry, scheduleJob } from "./framework";
 import { deliverDueWebhooks, enqueueWebhook } from "../webhooks/service";
 import { EvidenceService, type ObjectStorageAdapter } from "../privacy/evidence";
 import { appendAudit } from "../audit/service";
+import { getKms, rotateTenantDek, type KmsAdapter } from "../security/kms";
 
 export interface MaintenanceDeps {
   storage: ObjectStorageAdapter;
+  /** Defaults to getKms() (env-driven) — pass an explicit adapter in tests. */
+  kms?: KmsAdapter;
 }
 
 export function buildRegistry(deps: MaintenanceDeps): JobRegistry {
   const registry = new JobRegistry();
+  const kms = deps.kms ?? getKms();
 
   /** Deliver due webhook deliveries (retry state lives on the deliveries themselves). */
   registry.register("webhooks.deliver", async (db) => {
@@ -71,6 +75,31 @@ export function buildRegistry(deps: MaintenanceDeps): JobRegistry {
     }
   });
 
+  /**
+   * Key-rotation EXECUTION: actually rotates overdue tenant DEKs (issues a
+   * new key_version, wraps it under the configured KMS, retires the old
+   * version for decrypt-only use). Idempotent — a tenant only reappears here
+   * once its *new* key's own rotate_due_at (180 days out) is overdue, so
+   * re-running this job harmlessly does nothing for already-rotated tenants.
+   * Runs independently of keys.rotation_reminder (which only audits/flags);
+   * both stay registered so the audit trail still shows the "overdue" signal
+   * even in the same tick the rotation actually executes.
+   */
+  registry.register("keys.rotation_execute", async (db) => {
+    const { rows } = await db.query<{ organisation_id: string | null; key_version: number }>(
+      `SELECT organisation_id, key_version FROM tenant_keys WHERE status = 'active' AND rotate_due_at <= now()`,
+    );
+    for (const key of rows) {
+      const newVersion = await rotateTenantDek(db, kms, key.organisation_id);
+      await appendAudit(db, {
+        organisationId: key.organisation_id, actorType: "system", actorId: "rotation-job",
+        action: "key.rotation_executed", resourceType: "tenant_key",
+        resourceId: `v${newVersion}`, outcome: "success",
+        details: { previousVersion: key.key_version, newVersion },
+      });
+    }
+  });
+
   /** Model-expiry alerts: mark expired models + notify tenants via model.status_changed. */
   registry.register("models.expiry_alert", async (db) => {
     const expired = await db.query<{ id: string; model_id: string; purpose: string }>(
@@ -115,6 +144,7 @@ const RECURRING: { kind: string; everyMinutes: number }[] = [
   { kind: "retention.purge", everyMinutes: 15 },
   { kind: "audit.export", everyMinutes: 60 },
   { kind: "keys.rotation_reminder", everyMinutes: 24 * 60 },
+  { kind: "keys.rotation_execute", everyMinutes: 24 * 60 },
   { kind: "models.expiry_alert", everyMinutes: 24 * 60 },
 ];
 

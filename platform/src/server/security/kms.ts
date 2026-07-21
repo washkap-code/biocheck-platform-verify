@@ -8,6 +8,7 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
 import type { Db } from "../db/client";
+import { AwsKmsAdapter } from "./kms-aws";
 
 export interface KmsAdapter {
   /** Identifier recorded next to every wrapped key (rotation forensics). */
@@ -135,12 +136,35 @@ export function isEnvelopeCiphertext(value: string): boolean {
 
 let adapter: KmsAdapter | null = null;
 
+/**
+ * Provider selection: BIOCHECK_KMS_PROVIDER=aws builds a real AwsKmsAdapter
+ * from BIOCHECK_KMS_KEY_ID (+ optional AWS_REGION); anything else (including
+ * unset) falls back to the local dev adapter, which assertProductionKeyConfig
+ * then refuses to let production actually run on. This is the wiring that
+ * was previously missing — setKms() existed but nothing ever called it, so a
+ * production deployment had no path to a real KMS at all.
+ */
+function buildAdapterFromEnv(): KmsAdapter {
+  const provider = process.env.BIOCHECK_KMS_PROVIDER ?? "local";
+  if (provider === "aws") {
+    const keyId = process.env.BIOCHECK_KMS_KEY_ID;
+    if (!keyId) throw new Error("BIOCHECK_KMS_PROVIDER=aws requires BIOCHECK_KMS_KEY_ID to be set.");
+    return new AwsKmsAdapter({ keyId, region: process.env.AWS_REGION });
+  }
+  return new LocalKmsAdapter();
+}
+
 export function getKms(): KmsAdapter {
   if (!adapter) {
-    adapter = new LocalKmsAdapter(); // replaced by a real adapter via setKms() in production wiring
+    adapter = buildAdapterFromEnv(); // explicit setKms() calls (e.g. in tests) still override this
     assertProductionKeyConfig(adapter);
   }
   return adapter;
+}
+
+/** test hook */
+export function resetKmsCache(): void {
+  adapter = null;
 }
 
 export function setKms(kms: KmsAdapter): void {

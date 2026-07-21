@@ -1,5 +1,25 @@
 # BioCheck build status
 
+## 22 Jul 2026 — Per-tenant KMS: real AWS adapter + real rotation-execution job (never run against live AWS)
+
+Closed the two concrete gaps flagged in `kms.ts`'s own history: (1) no real
+`KmsAdapter` implementation existed besides the dev-only local one, and (2)
+`setKms()` was called nowhere, so production had no actual path to a real
+KMS. Built `platform/src/server/security/kms-aws.ts` (`AwsKmsAdapter`, real
+AWS SDK `EncryptCommand`/`DecryptCommand` calls, injectable client for
+testing); made `getKms()` env-driven (`BIOCHECK_KMS_PROVIDER=aws` +
+`BIOCHECK_KMS_KEY_ID`); made `config.ts` refuse production without a real
+provider configured; added `keys.rotation_execute` (`maintenance.ts`), a
+daily job that actually calls `rotateTenantDek()` for overdue tenant keys —
+previously only `keys.rotation_reminder` existed, which audits overdue keys
+but never rotates them. New `tests/kms-aws.test.ts` (9/9, mocked AWS
+client) plus extended `operations.test.ts` (production config refusal,
+real rotation-execute proving version bump + retirement + idempotency).
+Full suite re-run clean: 158/158 across all 11 test files, `tsc --noEmit`
+clean. **Never exercised against a real AWS account — no AWS credentials
+exist in this environment.** Full detail: `docs/KMS_BUILD_STATUS.md`.
+Classification: Prototype (built, tested via mocks), not Production.
+
 ## 21 Jul 2026 — Fingerprint: real matching software built, run, verified end-to-end (not enterprise-grade)
 
 Direct answer to "can the platform verify fingerprints at an enterprise-grade
