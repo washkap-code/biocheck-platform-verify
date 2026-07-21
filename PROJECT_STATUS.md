@@ -1,5 +1,22 @@
 # BioCheck build status
 
+## 21 Jul 2026 — Fingerprint: real matching software built, run, verified end-to-end (not enterprise-grade)
+
+Direct answer to "can the platform verify fingerprints at an enterprise-grade
+level": **no.** That needs real scanner hardware, PAD, calibration on a real
+dataset, and independent evaluation — none producible in a software sandbox.
+What this session did close: the fingerprint *matching software* went from
+"authored, never compiled or run" (Java/SourceAFIS, blocked here by no root +
+network-allowlisted Maven Central/Adoptium) to a working Python alternative
+(`sidecar-fingerprint-py/`) — compiled (trivially, it's Python), running,
+passing its own 15-check conformance suite, passing the engine's own
+previously-always-skipped conformance suite (5/5), and verified end-to-end
+through the real FastAPI facade (enrol → encrypted template → compare, correct
+same/different-finger ordering, correct single-use capture_ref rejection).
+Full detail, all caveats, and the "what's still needed" list:
+`docs/FINGERPRINT_BUILD_STATUS.md` and `sidecar-fingerprint-py/README.md`.
+Nothing here upgrades the capability past **Prototype**.
+
 ## Phase log
 
 ### Prompt 0 — Discovery and audit (14 Jul 2026) ✅

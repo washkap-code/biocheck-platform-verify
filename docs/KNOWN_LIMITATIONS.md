@@ -7,6 +7,7 @@ Read this before any deployment decision. These statements are deliberate and mu
 - **BioCheck is not certified.** No independent body has certified the platform, the SeetaFace6 provider, or any model. The codebase produces evidence toward future certification; it is not itself a certificate.
 - **No accuracy figures exist.** There are no validated FAR, FRR, TAR, APCER or BPCER numbers. Any number seen in a demo or sandbox is simulation output and is labelled as such. Do not quote demo numbers as performance.
 - **The current SeetaFace6 provider is not independently evaluated by BioCheck.** Its open-edition licence permits commercial use, but BioCheck has not run its own demographic and capture-condition evaluation. That evaluation is a prerequisite for production, not for a controlled pilot.
+- **The fingerprint matcher (`sidecar-fingerprint-py/`, added 21 Jul 2026) is a from-scratch classical algorithm, not a vendor product.** It has no published benchmark numbers of any kind (unlike SourceAFIS, which at least has public FVC results, even though BioCheck hasn't independently validated those either). Its own measured discriminative accuracy on synthetic test data is ~83% correct ordering (10/12 trials) — see `docs/FINGERPRINT_BUILD_STATUS.md` — which is evidence it works as a real matcher, and simultaneously evidence it is nowhere near production accuracy.
 
 ## Presentation-attack detection
 

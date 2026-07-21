@@ -95,7 +95,13 @@ def sidecar(registry: ModelRegistry) -> FingerprintSidecar:
 def test_healthz_reports_model_identity():
     h = _healthz()
     assert h["status"] == "ok"
-    assert h["model_id"].startswith("sourceafis")
+    # The wire contract (providers/fingerprint.py) never actually required
+    # SourceAFIS specifically - it's algorithm-agnostic by design. This suite
+    # now also runs against BioCheck's Python classical-minutiae sidecar
+    # (sidecar-fingerprint-py/), which reports model_id "biocheck-py-minutiae-*"
+    # rather than "sourceafis-*". Assert identity is present and well-formed
+    # instead of hardcoding one implementation's naming.
+    assert h["model_id"] and isinstance(h["model_id"], str)
     assert len(h["model_sha256"]) == 64
     assert "score_mapping" in h
 
